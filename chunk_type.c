@@ -3,51 +3,46 @@
 #include <memory.h>
 #include "chunk_type.h"
 
-char* INSTRUCTION_NAME[] = {
-    "MOVE",
-    "LOADK",
-    "LOADBOOL",
-    "LOADNIL",
-    "GETUPVAL",
-    "GETGLOBAL",
-    "GETTABLE",
-    "SETGLOBAL",
-    "SETUPVAL",
-    "SETTABLE",
-    "NEWTABLE",
-    "SELF",
-    "ADD",
-    "SUB",
-    "MUL",
-    "DIV",
-    "MOD",
-    "POW",
-    "UNM",
-    "NOT",
-    "LEN",
-    "CONCAT",
-    "JMP",
-    "EQ",
-    "LT",
-    "LE",
-    "TEST",
-    "TESTSET",
-    "CALL",
-    "TAILCALL",
-    "RETURN",
-    "FORLOOP",
-    "FORPREP",
-    "TFORLOOP",
-    "SETLIST",
-    "CLOSE",
-    "CLOSURE",
-    "VARARG"
+InstructionDesc INSTRUCTION_DESC[] = {
+    { "MOVE     ", iABC, 2 },
+    { "LOADK    ", iABx, 2 },
+    { "LOADBOOL ", iABC, 3 },
+    { "LOADNIL  ", iABC, 2 },
+    { "GETUPVAL ", iABC, 2 },
+    { "GETGLOBAL", iABx, 2 },
+    { "GETTABLE ", iABC, 3 },
+    { "SETGLOBAL", iABx, 2 },
+    { "SETUPVAL ", iABC, 2 },
+    { "SETTABLE ", iABC, 3 },
+    { "NEWTABLE ", iABC, 1 },
+    { "SELF     ", iABC, 1 },
+    { "ADD      ", iABC, 1 },
+    { "SUB      ", iABC, 1 },
+    { "MUL      ", iABC, 1 },
+    { "DIV      ", iABC, 1 },
+    { "MOD      ", iABC, 1 },
+    { "POW      ", iABC, 1 },
+    { "UNM      ", iABC, 1 },
+    { "NOT      ", iABC, 1 },
+    { "LEN      ", iABC, 1 },
+    { "CONCAT   ", iABC, 1 },
+    { "JMP      ", iABC, 1 },
+    { "EQ       ", iABC, 1 },
+    { "LT       ", iABC, 1 },
+    { "LE       ", iABC, 1 },
+    { "TEST     ", iABC, 1 },
+    { "TESTSET  ", iABC, 1 },
+    { "CALL     ", iABC, 1 },
+    { "TAILCALL ", iABC, 1 },
+    { "RETURN   ", iABC, 1 },
+    { "FORLOOP  ", iABC, 1 },
+    { "FORPREP  ", iABC, 1 },
+    { "TFORLOOP ", iABC, 1 },
+    { "SETLIST  ", iABC, 1 },
+    { "CLOSE    ", iABC, 1 },
+    { "CLOSURE  ", iABC, 1 },
+    { "VARARG   ", iABC, 1 },
 };
-
-char* get_op_name( unsigned int opcode )
-{
-    return INSTRUCTION_NAME[opcode & 0x3f];
-}
 
 void read_string( FILE* f, String* str )
 {
@@ -139,7 +134,7 @@ void read_upvalue( FILE* f, UpvalueList* ul )
     }
 }
 
-void read_function( FILE* f, FunctionBlock* fb )
+void read_function( FILE* f, FunctionBlock* fb, int lv )
 {
     read_string( f, &fb->source_name );
     fread( &fb->first_line, 1, 12, f );
@@ -151,12 +146,13 @@ void read_function( FILE* f, FunctionBlock* fb )
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
     int i;
     for( i = 0; i < fb->num_func; i++ ) {
-        read_function( f, pfb );
+        read_function( f, pfb, lv+1 );
         pfb++;
     }
     read_linepos( f, &fb->instruction_list );
     read_local( f, &fb->local_list );
     read_upvalue( f, &fb->upvalue_list );
+    fb->level = lv;
 }
 
 void format_luaheader( LuaHeader* lh )
@@ -172,72 +168,157 @@ void format_luaheader( LuaHeader* lh )
     printf( "integral flag:\t%d\n", lh->integral_flag );
 }
 
+#define FORMAT_LEVEL \
+    for( tmp_lv = 0; tmp_lv < fb->level; tmp_lv++ ) \
+        printf( "\t" ); \
+    printf
+
+#define FORMAT_RK( RK ) \
+    if( RK >= 0x100 ) \
+        format_constant( &fb->constant_list.value[RK-0x100], 0 ); \
+    else \
+        printf( "-" );
+    
+
+
+void format_instruction( FunctionBlock* fb, Instruction* in, int order )
+{
+    int tmp_lv;
+    unsigned char op = in->opcode & 0x3F;
+    unsigned char A = ( in->opcode >> 6 ) &0xFF;
+    unsigned short B = in->opcode >> 23;
+    unsigned short C = ( in->opcode >> 14 ) & 0x1FF;
+    unsigned int Bx = in->opcode >> 14;
+    InstructionDesc* id = &INSTRUCTION_DESC[op];
+    FORMAT_LEVEL( "\t%d.\t[%d]\t%s\t%d", order, in->line_pos, id->name, A );
+    switch( id->type ) {
+        case iABC:
+            if( id->param_num >= 2 )
+                printf( " %d", B );
+            if( id->param_num == 3 )
+                printf( " %d", C );
+            break;
+        case iABx:
+            if( id->param_num >= 2 )
+                printf( " %d", Bx );
+            break;
+        case iAsBx:
+            {
+            }
+            break;
+        default:
+            break;
+    }
+    switch( op ) {
+        case LOADK:
+            printf( "\t; " );
+            format_constant( &fb->constant_list.value[Bx], 0 );
+            break;
+        case GETGLOBAL:
+        case SETGLOBAL:
+            printf( "\t; " );
+            format_constant( &fb->constant_list.value[Bx], 1 );
+            break;
+        case GETUPVAL:
+        case SETUPVAL:
+            printf( "\t; %s", fb->upvalue_list.value[B].value );
+            break;
+        case GETTABLE:
+            printf( "\t; " );
+            FORMAT_RK( C );
+            break;
+        case SETTABLE:
+            printf( "\t; " );
+            FORMAT_RK( B );
+            printf( " " );
+            FORMAT_RK( C );
+            break;
+        default:
+            break;
+    }
+    printf( "\n" );
+}
+
+void format_constant( Constant* c, int global )
+{
+    switch( c->type ) {
+        case LUA_TNIL:
+            printf( "nil" );
+            break;
+        case LUA_TBOOLEAN:
+            if( c->boolean )
+                printf( "true" );
+            else
+                printf( "false" );
+            break;
+        case LUA_TNUMBER:
+            {
+                double fractional = c->number-( long long )( c->number );
+                if( fractional == 0 )
+                    printf( "%lld", ( long long )( c->number ) );
+                else
+                    printf( "%f", c->number );
+            }
+            break;
+        case LUA_TSTRING:
+            if( global )
+                printf( "%s", c->string.value );
+            else
+                printf( "\"%s\"", c->string.value );
+            break;
+        default:
+            break;
+    }
+}
+
 void format_function( FunctionBlock* fb )
 {
-    printf( "source name:\t%s\n", fb->source_name.value );
-    printf( "line defined:\t%d\n", fb->first_line );
-    printf( "last line defined:\t%d\n", fb->last_line );
-    printf( "number of upvalues:\t%d\n", fb->num_upvalue );
-    printf( "number of parameters:\t%d\n", fb->num_parameter );
-    printf( "is_vararg flag:\t%d\n", fb->is_vararg );
-    printf( "maximum stack size:\t%d\n", fb->max_stack_size );
-
-    printf( "instruction list:\n" );
     int i;
-    for( i = 0; i < fb->instruction_list.size; i++ ) {
-        Instruction* in = &fb->instruction_list.value[i];
-        printf( "\t%d\t[%d]\t%s\n", i, in->line_pos, get_op_name( in->opcode ) );
+    int tmp_lv;
+    if( fb->source_name.size > 0 ) {
+        FORMAT_LEVEL( "source name:\t%s\n", fb->source_name.value );
     }
+    else {
+        FORMAT_LEVEL( "line defined:\t%d\n", fb->first_line );
+        FORMAT_LEVEL( "last line defined:\t%d\n", fb->last_line );
+    }
+    FORMAT_LEVEL( "number of upvalues:\t%d\n", fb->num_upvalue );
+    FORMAT_LEVEL( "number of parameters:\t%d\n", fb->num_parameter );
+    FORMAT_LEVEL( "is_vararg flag:\t%d\n", fb->is_vararg );
+    FORMAT_LEVEL( "maximum stack size:\t%d\n", fb->max_stack_size );
 
-    printf( "constant list:\n" );
+    FORMAT_LEVEL( "constant list:\n" );
     for( i = 0; i < fb->constant_list.size; i++ ) {
-        printf( "\t%d\t", i );
+        FORMAT_LEVEL( "\t%d.\t", i );
         Constant* c = &fb->constant_list.value[i];
-        switch( c->type ) {
-            case LUA_TNIL:
-                printf( "nil" );
-                break;
-            case LUA_TBOOLEAN:
-                if( c->boolean )
-                    printf( "true" );
-                else
-                    printf( "false" );
-                break;
-            case LUA_TNUMBER:
-                {
-                    double fractional = c->number-( long long )( c->number );
-                    if( fractional == 0 )
-                        printf( "%lld", ( long long )( c->number ) );
-                    else
-                        printf( "%f", c->number );
-                }
-                break;
-            case LUA_TSTRING:
-                printf( "%s", c->string.value );
-                break;
-            default:
-                break;
-        }
+        format_constant( c, 0 );
         printf( "\n" );
     }
 
-    printf( "Local list:\n" );
+    FORMAT_LEVEL( "local list:\n" );
     for( i = 0; i < fb->local_list.size; i++ ) {
         Local* l = &fb->local_list.value[i];
-        printf( "\t%d\t%s\t(%d,%d)\n", i, l->name.value, l->start, l->end );
+        FORMAT_LEVEL( "\t%d.\t%s\t(%d,%d)\n", i, l->name.value, l->start, l->end );
     }
 
-    printf( "Upvalue List:\n" );
+    FORMAT_LEVEL( "upvalue list:\n" );
     for( i = 0; i < fb->upvalue_list.size; i++ ) {
         String* s = &fb->upvalue_list.value[i];
-        printf( "\t%d\t%s\n", i, s->value );
+        FORMAT_LEVEL( "\t%d.\t%s\n", i, s->value );
     }
 
-    printf( "\n" );
+    FORMAT_LEVEL( "instruction list:\n" );
+    for( i = 0; i < fb->instruction_list.size; i++ ) {
+        Instruction* in = &fb->instruction_list.value[i];
+        format_instruction( fb, in, i );
+    }
+
+    FORMAT_LEVEL( "function prototype list:\n" );
 
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
     for( i = 0; i < fb->num_func; i++ ) {
         format_function( pfb );
         pfb++;
+        printf( "\n" );
     }
 }

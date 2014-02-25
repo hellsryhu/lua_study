@@ -22,7 +22,7 @@ int main( int argc, char* argv[] )
 
     FunctionBlock fb;
     memset( &fb, 0, sizeof( FunctionBlock ) );
-    read_function( f, &fb );
+    read_function( f, &fb, 0 );
 
     format_function( &fb );
 

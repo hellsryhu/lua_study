@@ -20,6 +20,62 @@ typedef struct
     char* value;
 } String;
 
+enum INSTRUCTION
+{
+    MOVE = 0,
+    LOADK,
+    LOADBOOL,
+    LOADNIL,
+    GETUPVAL,
+    GETGLOBAL,
+    GETTABLE,
+    SETGLOBAL,
+    SETUPVAL,
+    SETTABLE,
+    NEWTABLE,
+    SELF,
+    ADD,
+    SUB,
+    MUL,
+    DIV,
+    MOD,
+    POW,
+    UNM,
+    NOT,
+    LEN,
+    CONCAT,
+    JMP,
+    EQ,
+    LT,
+    LE,
+    TEST,
+    TESTSET,
+    CALL,
+    TAILCALL,
+    RETURN,
+    FORLOOP,
+    FORPREP,
+    TFORLOOP,
+    SETLIST,
+    CLOSE,
+    CLOSURE,
+    VARARG,
+};
+
+enum INSTRUCTION_TYPE
+{
+    iABC = 0,
+    iABx = 1,
+    iAsBx = 2,
+};
+
+typedef struct
+{
+    const char* name;
+    unsigned char type;
+    unsigned char param_num;
+} InstructionDesc;
+
 typedef struct
 {
     unsigned int opcode;
@@ -92,6 +148,7 @@ typedef struct
     void* funcs;
     LocalList local_list;
     UpvalueList upvalue_list;
+    int level;
 } FunctionBlock;
 
 char* get_op_name( unsigned int opcode );
@@ -102,9 +159,11 @@ void read_constant( FILE* f, ConstantList* cl );
 void read_linepos( FILE* f, InstructionList* il );
 void read_local( FILE* f, LocalList *ll );
 void read_upvalue( FILE* f, UpvalueList* ul );
-void read_function( FILE* f, FunctionBlock* fb );
+void read_function( FILE* f, FunctionBlock* fb, int lv );
 
 void format_luaheader( LuaHeader* lh );
+void format_instruction( FunctionBlock* fb, Instruction* in, int order );
+void format_constant( Constant* c, int global );
 void format_function( FunctionBlock* fb );
 
 #endif
