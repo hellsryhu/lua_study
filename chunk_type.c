@@ -3,45 +3,49 @@
 #include <memory.h>
 #include "chunk_type.h"
 
+const char* sABC[] = { "A", "B", "C" };
+const char* sABx[] = { "A", "Bx" };
+const char* sAsBx[] = { "sBx" };
+
 InstructionDesc INSTRUCTION_DESC[] = {
-    { "MOVE     ", iABC, 2 },
-    { "LOADK    ", iABx, 2 },
-    { "LOADBOOL ", iABC, 3 },
-    { "LOADNIL  ", iABC, 2 },
-    { "GETUPVAL ", iABC, 2 },
-    { "GETGLOBAL", iABx, 2 },
-    { "GETTABLE ", iABC, 3 },
-    { "SETGLOBAL", iABx, 2 },
-    { "SETUPVAL ", iABC, 2 },
-    { "SETTABLE ", iABC, 3 },
-    { "NEWTABLE ", iABC, 1 },
-    { "SELF     ", iABC, 1 },
-    { "ADD      ", iABC, 1 },
-    { "SUB      ", iABC, 1 },
-    { "MUL      ", iABC, 1 },
-    { "DIV      ", iABC, 1 },
-    { "MOD      ", iABC, 1 },
-    { "POW      ", iABC, 1 },
-    { "UNM      ", iABC, 1 },
-    { "NOT      ", iABC, 1 },
-    { "LEN      ", iABC, 1 },
-    { "CONCAT   ", iABC, 1 },
-    { "JMP      ", iABC, 1 },
-    { "EQ       ", iABC, 1 },
-    { "LT       ", iABC, 1 },
-    { "LE       ", iABC, 1 },
-    { "TEST     ", iABC, 1 },
-    { "TESTSET  ", iABC, 1 },
-    { "CALL     ", iABC, 1 },
-    { "TAILCALL ", iABC, 1 },
-    { "RETURN   ", iABC, 1 },
-    { "FORLOOP  ", iABC, 1 },
-    { "FORPREP  ", iABC, 1 },
-    { "TFORLOOP ", iABC, 1 },
-    { "SETLIST  ", iABC, 1 },
-    { "CLOSE    ", iABC, 1 },
-    { "CLOSURE  ", iABC, 1 },
-    { "VARARG   ", iABC, 1 },
+    { "MOVE     ", iABC, 2, "R(A) := R(B)" },
+    { "LOADK    ", iABx, 2, "R(A) := Kst(Bx)" },
+    { "LOADBOOL ", iABC, 3, "R(A) := (Bool)B; if (C) PC++" },
+    { "LOADNIL  ", iABC, 2, "R(A) := ... := R(B) := nil" },
+    { "GETUPVAL ", iABC, 2, "R(A) := UpValue[B]" },
+    { "GETGLOBAL", iABx, 2, "R(A) := Gbl[Kst(Bx)]" },
+    { "GETTABLE ", iABC, 3, "R(A) := R(B)[RK(C)]" },
+    { "SETGLOBAL", iABx, 2, "Gbl[Kst(Bx)] := R(A)" },
+    { "SETUPVAL ", iABC, 2, "UpValue[B] := R(A)" },
+    { "SETTABLE ", iABC, 3, "R(A)[RK(B)] := RK(C)" },
+    { "NEWTABLE ", iABC, 1, "" },
+    { "SELF     ", iABC, 3, "R(A+1) := R(B); R(A) := R(B)[RK(C)]" },
+    { "ADD      ", iABC, 3, "R(A) := RK(B) + RK(C)" },
+    { "SUB      ", iABC, 3, "R(A) := RK(B) ¨C RK(C)" },
+    { "MUL      ", iABC, 3, "R(A) := RK(B) * RK(C)" },
+    { "DIV      ", iABC, 3, "R(A) := RK(B) / RK(C)" },
+    { "MOD      ", iABC, 3, "R(A) := RK(B) % RK(C)" },
+    { "POW      ", iABC, 3, "R(A) := RK(B) ^ RK(C)" },
+    { "UNM      ", iABC, 2, "R(A) := -R(B)" },
+    { "NOT      ", iABC, 2, "R(A) := not R(B)" },
+    { "LEN      ", iABC, 2, "R(A) := length of R(B)" },
+    { "CONCAT   ", iABC, 3, "R(A) := R(B).. ... ..R(C)" },
+    { "JMP      ", iAsBx, 1, "PC += sBx" },
+    { "EQ       ", iABC, 1, "" },
+    { "LT       ", iABC, 1, "" },
+    { "LE       ", iABC, 1, "" },
+    { "TEST     ", iABC, 1, "" },
+    { "TESTSET  ", iABC, 1, "" },
+    { "CALL     ", iABC, 3, "R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))" },
+    { "TAILCALL ", iABC, 3, "return R(A)(R(A+1), ... ,R(A+B-1))" },
+    { "RETURN   ", iABC, 2, "return R(A), ... ,R(A+B-2)" },
+    { "FORLOOP  ", iABC, 1, "" },
+    { "FORPREP  ", iABC, 1, "" },
+    { "TFORLOOP ", iABC, 1, "" },
+    { "SETLIST  ", iABC, 1, "" },
+    { "CLOSE    ", iABC, 1, "" },
+    { "CLOSURE  ", iABC, 1, "" },
+    { "VARARG   ", iABC, 2, "R(A), R(A+1), ..., R(A+B-1) = vararg" },
 };
 
 void read_string( FILE* f, String* str )
@@ -189,22 +193,24 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order )
     unsigned short B = in->opcode >> 23;
     unsigned short C = ( in->opcode >> 14 ) & 0x1FF;
     unsigned int Bx = in->opcode >> 14;
+    int sBx = ( in->opcode >> 14 )-0x1FFFF;
     InstructionDesc* id = &INSTRUCTION_DESC[op];
-    FORMAT_LEVEL( "\t%d.\t[%d]\t%s\t%d", order, in->line_pos, id->name, A );
+    FORMAT_LEVEL( "\t%d.\t[%d]\t%s\t", order, in->line_pos, id->name );
     switch( id->type ) {
         case iABC:
+            printf( "%d", A );
             if( id->param_num >= 2 )
                 printf( " %d", B );
             if( id->param_num == 3 )
                 printf( " %d", C );
             break;
         case iABx:
+            printf( "%d", A );
             if( id->param_num >= 2 )
                 printf( " %d", Bx );
             break;
         case iAsBx:
-            {
-            }
+            printf( "%d", sBx );
             break;
         default:
             break;
@@ -233,10 +239,44 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order )
             printf( " " );
             FORMAT_RK( C );
             break;
+        case ADD:
+        case SUB:
+        case MUL:
+        case DIV:
+        case MOD:
+        case POW:
+            printf( "\t; " );
+            FORMAT_RK( B );
+            printf( " " );
+            FORMAT_RK( C );
+            break;
+        case JMP:
+            printf( "\t; to %d", order+sBx+1 );
+            break;
+        case SELF:
+            printf( "\t; " );
+            FORMAT_RK( C );
         default:
             break;
     }
-    printf( "\n" );
+    printf( "\t\t\t\t\t\t\t\t" );
+    int p = 0;
+    switch( id->type ) {
+        case iABC:
+            for( p = 0; p < id->param_num; p++ )
+                printf( "%s ", sABC[p] );
+            break;
+        case iABx:
+            for( p = 0; p < id->param_num; p++ )
+                printf( "%s ", sABx[p] );
+            break;
+        case iAsBx:
+            printf( "sBx" );
+            break;
+        default:
+            break;
+    }
+    printf( "\t%s\n", id->desc );
 }
 
 void format_constant( Constant* c, int global )

@@ -74,6 +74,7 @@ typedef struct
     const char* name;
     unsigned char type;
     unsigned char param_num;
+    const char* desc;
 } InstructionDesc;
 
 typedef struct
