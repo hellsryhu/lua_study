@@ -31,11 +31,11 @@ InstructionDesc INSTRUCTION_DESC[] = {
     { "LEN      ", iABC, 2, "R(A) := length of R(B)" },
     { "CONCAT   ", iABC, 3, "R(A) := R(B).. ... ..R(C)" },
     { "JMP      ", iAsBx, 1, "PC += sBx" },
-    { "EQ       ", iABC, 1, "" },
-    { "LT       ", iABC, 1, "" },
-    { "LE       ", iABC, 1, "" },
-    { "TEST     ", iABC, 1, "" },
-    { "TESTSET  ", iABC, 1, "" },
+    { "EQ       ", iABC, 3, "if ((RK(B) == RK(C)) ~= A) then PC++" },
+    { "LT       ", iABC, 3, "if ((RK(B) < RK(C)) ~= A) then PC++" },
+    { "LE       ", iABC, 3, "if ((RK(B) <= RK(C)) ~= A) then PC++" },
+    { "TEST     ", iABC, 3, "if not (R(A) <=> C) then PC++" },
+    { "TESTSET  ", iABC, 3, "if (R(B) <=> C) then R(A) := R(B) else PC++" },
     { "CALL     ", iABC, 3, "R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))" },
     { "TAILCALL ", iABC, 3, "return R(A)(R(A+1), ... ,R(A+B-1))" },
     { "RETURN   ", iABC, 2, "return R(A), ... ,R(A+B-2)" },
@@ -256,6 +256,14 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order )
         case SELF:
             printf( "\t; " );
             FORMAT_RK( C );
+        case EQ:
+        case LT:
+        case LE:
+            printf( "\t; " );
+            FORMAT_RK( B );
+            printf( " " );
+            FORMAT_RK( C );
+            break;
         default:
             break;
     }
