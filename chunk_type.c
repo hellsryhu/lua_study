@@ -5,7 +5,7 @@
 
 const char* sABC[] = { "A", "B", "C" };
 const char* sABx[] = { "A", "Bx" };
-const char* sAsBx[] = { "sBx" };
+const char* sAsBx[] = { "A", "sBx" };
 
 InstructionDesc INSTRUCTION_DESC[] = {
     { "MOVE     ", iABC, 2, "R(A) := R(B)" },
@@ -18,7 +18,7 @@ InstructionDesc INSTRUCTION_DESC[] = {
     { "SETGLOBAL", iABx, 2, "Gbl[Kst(Bx)] := R(A)" },
     { "SETUPVAL ", iABC, 2, "UpValue[B] := R(A)" },
     { "SETTABLE ", iABC, 3, "R(A)[RK(B)] := RK(C)" },
-    { "NEWTABLE ", iABC, 1, "" },
+    { "NEWTABLE ", iABC, 3, "R(A) := {} (size = B,C)" },
     { "SELF     ", iABC, 3, "R(A+1) := R(B); R(A) := R(B)[RK(C)]" },
     { "ADD      ", iABC, 3, "R(A) := RK(B) + RK(C)" },
     { "SUB      ", iABC, 3, "R(A) := RK(B) ¨C RK(C)" },
@@ -39,12 +39,12 @@ InstructionDesc INSTRUCTION_DESC[] = {
     { "CALL     ", iABC, 3, "R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))" },
     { "TAILCALL ", iABC, 3, "return R(A)(R(A+1), ... ,R(A+B-1))" },
     { "RETURN   ", iABC, 2, "return R(A), ... ,R(A+B-2)" },
-    { "FORLOOP  ", iABC, 1, "" },
-    { "FORPREP  ", iABC, 1, "" },
-    { "TFORLOOP ", iABC, 1, "" },
-    { "SETLIST  ", iABC, 1, "" },
+    { "FORLOOP  ", iAsBx, 2, "R(A) -= R(A+2); PC += sBx" },
+    { "FORPREP  ", iAsBx, 2, "R(A) += R(A+2);if R(A) <?= R(A+1) then { PC += sBx; R(A+3) = R(A) }" },
+    { "TFORLOOP ", iABC, 3, "R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2)); if R(A+3) ~= nil then { R(A+2) = R(A+3); } else { PC++; }" },
+    { "SETLIST  ", iABC, 3, "R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B" },
     { "CLOSE    ", iABC, 1, "" },
-    { "CLOSURE  ", iABC, 1, "" },
+    { "CLOSURE  ", iABx, 2, "R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))" },
     { "VARARG   ", iABC, 2, "R(A), R(A+1), ..., R(A+B-1) = vararg" },
 };
 
@@ -210,6 +210,8 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order )
                 printf( " %d", Bx );
             break;
         case iAsBx:
+            if( id->param_num >= 2 )
+                printf( "%d ", A );
             printf( "%d", sBx );
             break;
         default:
@@ -264,10 +266,14 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order )
             printf( " " );
             FORMAT_RK( C );
             break;
+        case FORPREP:
+        case FORLOOP:
+            printf( "\t; to %d", order+sBx+1 );
+            break;
         default:
             break;
     }
-    printf( "\t\t\t\t\t\t\t\t" );
+    printf( "\t\t\t\t" );
     int p = 0;
     switch( id->type ) {
         case iABC:
@@ -279,7 +285,8 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order )
                 printf( "%s ", sABx[p] );
             break;
         case iAsBx:
-            printf( "sBx" );
+            for( p = 2-id->param_num; p < id->param_num; p++ )
+                printf( "%s ", sAsBx[p] );
             break;
         default:
             break;
