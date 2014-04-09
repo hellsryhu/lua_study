@@ -152,6 +152,12 @@ typedef struct
     int level;
 } FunctionBlock;
 
+typedef struct
+{
+    char header;
+    char verbose;
+} FormatOpt;
+
 char* get_op_name( unsigned int opcode );
 
 void read_string( FILE* f, String* str );
@@ -163,8 +169,8 @@ void read_upvalue( FILE* f, UpvalueList* ul );
 void read_function( FILE* f, FunctionBlock* fb, int lv );
 
 void format_luaheader( LuaHeader* lh );
-void format_instruction( FunctionBlock* fb, Instruction* in, int order );
+void format_instruction( FunctionBlock* fb, Instruction* in, int order, FormatOpt* fo );
 void format_constant( Constant* c, int global );
-void format_function( FunctionBlock* fb );
+void format_function( FunctionBlock* fb, FormatOpt* fo );
 
 #endif

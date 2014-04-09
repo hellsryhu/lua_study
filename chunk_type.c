@@ -185,7 +185,7 @@ void format_luaheader( LuaHeader* lh )
     
 
 
-void format_instruction( FunctionBlock* fb, Instruction* in, int order )
+void format_instruction( FunctionBlock* fb, Instruction* in, int order, FormatOpt* fo )
 {
     int tmp_lv;
     unsigned char op = in->opcode & 0x3F;
@@ -273,25 +273,29 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order )
         default:
             break;
     }
-    printf( "\t\t\t\t" );
-    int p = 0;
-    switch( id->type ) {
-        case iABC:
-            for( p = 0; p < id->param_num; p++ )
-                printf( "%s ", sABC[p] );
-            break;
-        case iABx:
-            for( p = 0; p < id->param_num; p++ )
-                printf( "%s ", sABx[p] );
-            break;
-        case iAsBx:
-            for( p = 2-id->param_num; p < id->param_num; p++ )
-                printf( "%s ", sAsBx[p] );
-            break;
-        default:
-            break;
+    if( fo->verbose ) {
+        printf( "\t\t\t\t" );
+        int p = 0;
+        switch( id->type ) {
+            case iABC:
+                for( p = 0; p < id->param_num; p++ )
+                    printf( "%s ", sABC[p] );
+                break;
+            case iABx:
+                for( p = 0; p < id->param_num; p++ )
+                    printf( "%s ", sABx[p] );
+                break;
+            case iAsBx:
+                for( p = 2-id->param_num; p < id->param_num; p++ )
+                    printf( "%s ", sAsBx[p] );
+                break;
+            default:
+                break;
+        }
+        printf( "\t%s\n", id->desc );
     }
-    printf( "\t%s\n", id->desc );
+    else
+        printf( "\n" );
 }
 
 void format_constant( Constant* c, int global )
@@ -326,7 +330,7 @@ void format_constant( Constant* c, int global )
     }
 }
 
-void format_function( FunctionBlock* fb )
+void format_function( FunctionBlock* fb, FormatOpt* fo )
 {
     int i;
     int tmp_lv;
@@ -365,14 +369,14 @@ void format_function( FunctionBlock* fb )
     FORMAT_LEVEL( "instruction list:\n" );
     for( i = 0; i < fb->instruction_list.size; i++ ) {
         Instruction* in = &fb->instruction_list.value[i];
-        format_instruction( fb, in, i );
+        format_instruction( fb, in, i, fo );
     }
 
     FORMAT_LEVEL( "function prototype list:\n" );
 
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
     for( i = 0; i < fb->num_func; i++ ) {
-        format_function( pfb );
+        format_function( pfb, fo );
         pfb++;
         printf( "\n" );
     }
