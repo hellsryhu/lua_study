@@ -8,17 +8,20 @@ int main( int argc, char* argv[] )
     if( argc < 2 )
         return 0;
 
-    FormatOpt fo;
-    memset( &fo, 0, sizeof( FormatOpt ) );
+    OptArg oa;
+    memset( &oa, 0, sizeof( OptArg ) );
 
     int ch;
-    while( ( ch = getopt( argc, argv, "hv" ) ) != EOF ) {
+    while( ( ch = getopt( argc, argv, "fhv" ) ) != EOF ) {
         switch( ch ) {
+            case 'f':
+                oa.flow = 1;
+                break;
             case 'h':
-                fo.header = 1;
+                oa.header = 1;
                 break;
             case 'v':
-                fo.verbose = 1;
+                oa.verbose = 1;
                 break;
         }
     }
@@ -34,16 +37,19 @@ int main( int argc, char* argv[] )
 
     LuaHeader lh;
     fread( &lh, 1, sizeof( LuaHeader ), f );
-    if( fo.header ) {
+    if( oa.header ) {
         format_luaheader( &lh );
         printf( "\n" );
     }
 
     FunctionBlock fb;
-    memset( &fb, 0, sizeof( FunctionBlock ) );
+    INIT_FUNCTION_BLOCK( &fb );
     read_function( f, &fb, 0 );
 
-    format_function( &fb, &fo );
+    if( oa.flow )
+        flow_analysis( &fb, &oa );
+
+    format_function( &fb, &oa );
 
     fclose( f );
     return 0;

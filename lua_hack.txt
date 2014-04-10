@@ -1,0 +1,104 @@
+why not luaJIT?
+	1G mem limit in 64bit environment
+    need FFI
+principles
+	try not to change lua's native behavior
+	主要优化可读性和性能的取舍处
+bytecode optimization
+	bytecode research
+	bytecode loader/analyzer
+	optimization
+		common compiler optimization
+		auto local(Common Subexpression Elimination)
+		simple function inline
+		constant inline
+parrallel gc
+	gc research
+parrallel vm execution
+	vm execution research
+    哪些字节码执行过程中可能发生函数调用？
+        各种元方法
+        ADD     __add
+        GETTABLE    __index
+        SETTABLE    __newindex
+some thing like SIMD?
+	eg.
+		multiple get table: A.B.C
+		accumulator: A*B+C
+
+LOADNIL优化
+	lua解释器的原则是：函数开始到不是loadnil为止间的loadnil指令可以被省掉
+	每个local其实初始化都是nil，所以可能会执行额外的loadnil
+	>local a,b,c,d,e = nil,nil,0
+	; function [0] definition (level 1)
+	; 0 upvalues, 0 params, 5 stacks
+	.function 0 0 2 5
+	.local "a" ; 0
+	.local "b" ; 1
+	.local "c" ; 2
+	.local "d" ; 3
+	.local "e" ; 4
+	.const 0 ; 0
+	[1] loadk 2 0 ; 0
+	[2] loadnil 3 4			-- 可以被优化掉
+	[3] return 0 1
+	; end of function
+	
+constant folding
+	lua解释器会做简单的constant folding，只处理数值和布尔类型的一元和二元运算（负加减乘除余幂），字符串不会
+	当解释器解析表达式的时候，按运算优先级判断，如果当前的运算是常数值就会在编译期求值，否则不会，比如
+	a = 4+7+b会优化为a = 11+b
+	a = b+4*7会优化为a = b+28
+	而
+	a = b+4+7则不会优化
+	但如果写成
+	a = b+(4+7)就会优化为a = b+11
+	
+	>local a = 4 + 7 + b; a = b + 4 * 7; a = b + 4 + 7
+	; function [0] definition (level 1)
+	; 0 upvalues, 0 params, 2 stacks
+	.function 0 0 2 2
+	.local "a" ; 0
+	.const "b" ; 0
+	.const 11 ; 1
+	.const 28 ; 2
+	.const 4 ; 3
+	.const 7 ; 4
+	[1] getglobal 0 0 ; b
+	[2] add 0 257 0 ; 11 (a = 11 + b)
+	[3] getglobal 1 0 ; b
+	[4] add 0 1 258 ; 28 (a = b + 28)
+	[5] getglobal 1 0 ; b
+	[6] add 1 1 259 ; 4 (loc1 = b + 4)		-- 6、7可以优化为一条语句
+	[7] add 0 1 260 ; 7 (a = loc1 + 7)
+	[8] return 0 1
+	; end of function
+	
+	字符串、除0，不会被优化，不过这种情况实际中比较少见
+	>local a = 1 / 0; local b = 1 + "1"		-- 可以优化为local a = NaN; local b = 2
+	; function [0] definition (level 1)
+	; 0 upvalues, 0 params, 2 stacks
+	.function 0 0 2 2
+	.local "a" ; 0
+	.local "b" ; 1
+	.const 1 ; 0
+	.const 0 ; 1
+	.const "1" ; 2
+	[1] div 0 256 257 ; 1 0
+	[2] add 1 256 258 ; 1 "1"
+	[3] return 0 1
+	; end of function
+	
+	下面这几种目前也是没有constant folding的，不过实际情况也少见
+	local a = #"hello"
+	local b = "hello".."world"
+	
+求字符串长度的误区
+	其实字符串长度可以用#求值，比string.len快5倍……
+
+加执行参数
+	chunk_spy [-hv] lc_file
+	h 是否显示文件头
+	v 是否显示描述字节码的冗余信息
+	
+code block & flow analyzer

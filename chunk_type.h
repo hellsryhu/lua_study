@@ -1,6 +1,19 @@
 #ifndef __CHUNK_TYPE_H__
 #define __CHUNK_TYPE_H__
 
+#include "mylist.h"
+
+//--------------------------------------------------
+// structs
+//--------------------------------------------------
+
+typedef struct
+{
+    char header;
+    char verbose;
+    char flow;
+} OptArg;
+
 typedef struct
 {
    unsigned int header_signature;
@@ -136,6 +149,17 @@ typedef struct
 
 typedef struct
 {
+    struct list_head node;
+    int entry;
+    int exit;
+    int size_succ;
+    int size_pred;
+    void* successors;
+    void* predecessors;
+} CodeBlock;
+
+typedef struct
+{
     String source_name;
     int first_line;
     int last_line;
@@ -150,15 +174,18 @@ typedef struct
     LocalList local_list;
     UpvalueList upvalue_list;
     int level;
+    struct list_head code_block;
 } FunctionBlock;
 
-typedef struct
-{
-    char header;
-    char verbose;
-} FormatOpt;
+//--------------------------------------------------
+// functions
+//--------------------------------------------------
 
-char* get_op_name( unsigned int opcode );
+#define INIT_FUNCTION_BLOCK( pfb ) \
+    { \
+        memset( ( pfb ), 0, sizeof( FunctionBlock ) ); \
+        INIT_LIST_HEAD( &( pfb )->code_block ); \
+    }
 
 void read_string( FILE* f, String* str );
 void read_instruction( FILE* f, InstructionList* il );
@@ -169,8 +196,10 @@ void read_upvalue( FILE* f, UpvalueList* ul );
 void read_function( FILE* f, FunctionBlock* fb, int lv );
 
 void format_luaheader( LuaHeader* lh );
-void format_instruction( FunctionBlock* fb, Instruction* in, int order, FormatOpt* fo );
+void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* fo );
 void format_constant( Constant* c, int global );
-void format_function( FunctionBlock* fb, FormatOpt* fo );
+void format_function( FunctionBlock* fb, OptArg* fo );
+
+void flow_analysis( FunctionBlock* fb, OptArg* oa );
 
 #endif

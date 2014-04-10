@@ -3,6 +3,10 @@
 #include <memory.h>
 #include "chunk_type.h"
 
+//--------------------------------------------------
+// constants
+//--------------------------------------------------
+
 const char* sABC[] = { "A", "B", "C" };
 const char* sABx[] = { "A", "Bx" };
 const char* sAsBx[] = { "A", "sBx" };
@@ -47,6 +51,10 @@ InstructionDesc INSTRUCTION_DESC[] = {
     { "CLOSURE  ", iABx, 2, "R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))" },
     { "VARARG   ", iABC, 2, "R(A), R(A+1), ..., R(A+B-1) = vararg" },
 };
+
+//--------------------------------------------------
+// read functions
+//--------------------------------------------------
 
 void read_string( FILE* f, String* str )
 {
@@ -146,10 +154,10 @@ void read_function( FILE* f, FunctionBlock* fb, int lv )
     read_constant( f, &fb->constant_list );
     fread( &fb->num_func, sizeof( int ), 1, f );
     fb->funcs = realloc( fb->funcs, sizeof( FunctionBlock )*fb->num_func );
-    memset( fb->funcs, 0, sizeof( FunctionBlock )*fb->num_func );
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
     int i;
     for( i = 0; i < fb->num_func; i++ ) {
+        INIT_FUNCTION_BLOCK( pfb );
         read_function( f, pfb, lv+1 );
         pfb++;
     }
@@ -158,6 +166,10 @@ void read_function( FILE* f, FunctionBlock* fb, int lv )
     read_upvalue( f, &fb->upvalue_list );
     fb->level = lv;
 }
+
+//--------------------------------------------------
+// format output functions
+//--------------------------------------------------
 
 void format_luaheader( LuaHeader* lh )
 {
@@ -185,7 +197,7 @@ void format_luaheader( LuaHeader* lh )
     
 
 
-void format_instruction( FunctionBlock* fb, Instruction* in, int order, FormatOpt* fo )
+void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* oa )
 {
     int tmp_lv;
     unsigned char op = in->opcode & 0x3F;
@@ -273,7 +285,7 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order, FormatOp
         default:
             break;
     }
-    if( fo->verbose ) {
+    if( oa->verbose ) {
         printf( "\t\t\t\t" );
         int p = 0;
         switch( id->type ) {
@@ -330,7 +342,7 @@ void format_constant( Constant* c, int global )
     }
 }
 
-void format_function( FunctionBlock* fb, FormatOpt* fo )
+void format_function( FunctionBlock* fb, OptArg* oa )
 {
     int i;
     int tmp_lv;
@@ -367,17 +379,101 @@ void format_function( FunctionBlock* fb, FormatOpt* fo )
     }
 
     FORMAT_LEVEL( "instruction list:\n" );
+    struct list_head* pos = fb->code_block.next;
+    CodeBlock* cb = 0;
+    int cb_id = 1;
+    if( oa->flow && pos != &fb->code_block )
+        cb = list_entry( pos, CodeBlock, node );
     for( i = 0; i < fb->instruction_list.size; i++ ) {
+        if( oa->flow && cb && cb->entry == i ) {
+            FORMAT_LEVEL( "\tblock. %d\n", cb_id++ );
+            pos = pos->next;
+            if( pos != &fb->code_block )
+                cb = list_entry( pos, CodeBlock, node );
+            else
+                cb = 0;
+        }
         Instruction* in = &fb->instruction_list.value[i];
-        format_instruction( fb, in, i, fo );
+        format_instruction( fb, in, i, oa );
     }
 
     FORMAT_LEVEL( "function prototype list:\n" );
 
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
     for( i = 0; i < fb->num_func; i++ ) {
-        format_function( pfb, fo );
+        format_function( pfb, oa );
         pfb++;
         printf( "\n" );
+    }
+}
+
+//--------------------------------------------------
+// control flow analysis functions
+//--------------------------------------------------
+
+void flow_analysis( FunctionBlock* fb, OptArg* oa )
+{
+    INIT_LIST_HEAD( &fb->code_block );
+    CodeBlock* cb = ( CodeBlock* )malloc( sizeof( CodeBlock ) );
+    memset( cb, 0, sizeof( CodeBlock ) );
+    int i;
+    for( i = 0; i < fb->instruction_list.size; i++ ) {
+        Instruction* in = &fb->instruction_list.value[i];
+        unsigned char op = in->opcode & 0x3F;
+        switch( op ) {
+            case JMP:
+            case RETURN:
+            case FORLOOP:
+            case TFORLOOP:
+                cb->exit = i;
+                list_add_tail( &cb->node, &fb->code_block );
+
+                if( i < fb->instruction_list.size-1 ) {
+                    cb = ( CodeBlock* )malloc( sizeof( CodeBlock ) );
+                    memset( cb, 0, sizeof( CodeBlock ) );
+                    cb->entry = i+1;
+                }
+                else
+                    cb = 0;
+                break;
+            case FORPREP:
+                if( i != 0 ) {
+                    cb->exit = i-1;
+                    list_add_tail( &cb->node, &fb->code_block );
+
+                    cb = ( CodeBlock* )malloc( sizeof( CodeBlock ) );
+                    memset( cb, 0, sizeof( CodeBlock ) );
+                    cb->entry = i;
+                }
+            case CALL:
+            case TAILCALL:
+                if( i != 0 ) {
+                    cb->exit = i-1;
+                    list_add_tail( &cb->node, &fb->code_block );
+
+                    cb = ( CodeBlock* )malloc( sizeof( CodeBlock ) );
+                    memset( cb, 0, sizeof( CodeBlock ) );
+                    cb->entry = i;
+                }
+                cb->exit = i;
+                list_add_tail( &cb->node, &fb->code_block );
+
+                if( i < fb->instruction_list.size-1 ) {
+                    cb = ( CodeBlock* )malloc( sizeof( CodeBlock ) );
+                    memset( cb, 0, sizeof( CodeBlock ) );
+                    cb->entry = i+1;
+                }
+                break;
+        }
+    }
+    if( cb ) {
+        cb->exit = fb->instruction_list.size-1;
+        list_add_tail( &cb->node, &fb->code_block );
+    }
+
+    FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
+    for( i = 0; i < fb->num_func; i++ ) {
+        flow_analysis( pfb, oa );
+        pfb++;
     }
 }
