@@ -146,19 +146,27 @@ void read_upvalue( FILE* f, UpvalueList* ul )
     }
 }
 
-void read_function( FILE* f, FunctionBlock* fb, int lv )
+void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr )
 {
     read_string( f, &fb->source_name );
     fread( &fb->first_line, 1, 12, f );
+
     read_instruction( f, &fb->instruction_list );
+    smr->total_instruction_num += fb->instruction_list.size;
+    int i;
+    for( i = 0; i < fb->instruction_list.size; i++ ) {
+        Instruction* in = &fb->instruction_list.value[i];
+        unsigned char op = in->opcode & 0x3F;
+        smr->instruction_num[op]++;
+    }
+
     read_constant( f, &fb->constant_list );
     fread( &fb->num_func, sizeof( int ), 1, f );
     fb->funcs = realloc( fb->funcs, sizeof( FunctionBlock )*fb->num_func );
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
-    int i;
     for( i = 0; i < fb->num_func; i++ ) {
         INIT_FUNCTION_BLOCK( pfb );
-        read_function( f, pfb, lv+1 );
+        read_function( f, pfb, lv+1, smr );
         pfb++;
     }
     read_linepos( f, &fb->instruction_list );
@@ -434,11 +442,6 @@ static void quick_sort( int* array, int start, int end )
 
     int pivot = ( start+end )/2;
     int i;
-    /*
-    for( i = start; i <= end; i++ )
-        printf( "%d ", array[i] );
-    printf( "\t[%d]\n", array[pivot] );
-    */
     for( i = start; i <= end; i++ ) {
         if( ( i < pivot && array[i] > array[pivot] ) || ( i > pivot && array[i] < array[pivot] ) ) {
             int tmp = array[i];
@@ -447,11 +450,6 @@ static void quick_sort( int* array, int start, int end )
             pivot = i;
         }
     }
-    /*
-    for( i = start; i <= end; i++ )
-        printf( "%d ", array[i] );
-    printf( "\t[%d]\n", array[pivot] );
-    */
     quick_sort( array, start, pivot-1 );
     quick_sort( array, pivot+1, end );
 }

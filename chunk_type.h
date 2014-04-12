@@ -9,9 +9,11 @@
 
 typedef struct
 {
-    char header;
-    char verbose;
     char flow;
+    char header;
+    char quiet;
+    char summary;
+    char verbose;
 } OptArg;
 
 typedef struct
@@ -177,6 +179,12 @@ typedef struct
     struct list_head code_block;
 } FunctionBlock;
 
+typedef struct
+{
+    int total_instruction_num;
+    int instruction_num[VARARG+1];
+} Summary;
+
 //--------------------------------------------------
 // functions
 //--------------------------------------------------
@@ -193,7 +201,7 @@ void read_constant( FILE* f, ConstantList* cl );
 void read_linepos( FILE* f, InstructionList* il );
 void read_local( FILE* f, LocalList *ll );
 void read_upvalue( FILE* f, UpvalueList* ul );
-void read_function( FILE* f, FunctionBlock* fb, int lv );
+void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr );
 
 void format_luaheader( LuaHeader* lh );
 void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* fo );

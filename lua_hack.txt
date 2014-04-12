@@ -97,8 +97,11 @@ constant folding
 	其实字符串长度可以用#求值，比string.len快5倍……
 
 加执行参数
-	chunk_spy [-hv] lc_file
+	chunk_spy [-fhv] lc_file
+    f 是否进行流程分析
 	h 是否显示文件头
+    q 安静模式，不显示函数信息
+    s 是否显示摘要信息
 	v 是否显示描述字节码的冗余信息
 	
 code block & flow analyzer
