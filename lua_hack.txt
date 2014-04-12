@@ -102,3 +102,40 @@ constant folding
 	v 是否显示描述字节码的冗余信息
 	
 code block & flow analyzer
+    通常会修改PC的是block的开始或结束
+    以下指令必然是block的结尾
+        JMP
+        RETURN
+        FORLOOP
+        TFORLOOP
+        TAILCALL
+    作为数值for循环的开始语句，必然是block的开始
+        FORPREP
+    逻辑运算符虽然会修改PC，不过一定会跟随JMP，说明此block可能有2个后继，所以不作为结束
+        EQ
+        LT
+        LE
+        TEST
+        TESTSET
+    还有个特殊的例子，根据参数C，是指令中的立即数，来决定是否会跳转，所以需要判断一下C的值才决定是否是结束
+        LOADBOOL
+    所有移动到的PC值都会做为block的开始
+
+会产生函数调用的字节码
+    CALL
+    TAILCALL
+    ADD
+    SUB
+    MUL
+    DIV
+    MOD
+    POW
+    UNM
+    CONCAT
+    LEN
+    EQ
+    LT
+    INDEX
+    NEWINDEX
+    元方法可能会是一个函数
+    如果这个函数会修改外部的数据，那么在block内做local opt的时候需要非常注意
