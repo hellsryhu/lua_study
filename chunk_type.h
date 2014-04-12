@@ -1,6 +1,10 @@
 #ifndef __CHUNK_TYPE_H__
 #define __CHUNK_TYPE_H__
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <memory.h>
+
 #include "mylist.h"
 
 //--------------------------------------------------
@@ -207,7 +211,5 @@ void format_luaheader( LuaHeader* lh );
 void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* fo );
 void format_constant( Constant* c, int global );
 void format_function( FunctionBlock* fb, OptArg* fo );
-
-void flow_analysis( FunctionBlock* fb, OptArg* oa );
 
 #endif

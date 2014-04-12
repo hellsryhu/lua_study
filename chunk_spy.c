@@ -1,14 +1,14 @@
-#include <stdio.h>
-#include <memory.h>
 #include <unistd.h>
-#include "chunk_type.h"
+#include "optimize.h"
 
 extern InstructionDesc INSTRUCTION_DESC[];
 
 int main( int argc, char* argv[] )
 {
-    if( argc < 2 )
+    if( argc < 2 ) {
+        printf( "usage: chunk_spy [-fhqsv] lc_filename\n" );
         return 0;
+    }
 
     OptArg oa;
     memset( &oa, 0, sizeof( OptArg ) );
