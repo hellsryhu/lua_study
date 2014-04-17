@@ -386,12 +386,11 @@ void format_function( FunctionBlock* fb, OptArg* oa )
     FORMAT_LEVEL( "instruction list:\n" );
     struct list_head* pos = fb->code_block.next;
     CodeBlock* cb = 0;
-    int cb_id = 1;
     if( oa->flow && pos != &fb->code_block )
         cb = list_entry( pos, CodeBlock, node );
     for( i = 0; i < fb->instruction_list.size; i++ ) {
         if( oa->flow && cb && cb->entry == i ) {
-            FORMAT_LEVEL( "\tblock. %d\n", cb_id++ );
+            FORMAT_LEVEL( "\tblock. %d\n", cb->id );
             pos = pos->next;
             if( pos != &fb->code_block )
                 cb = list_entry( pos, CodeBlock, node );

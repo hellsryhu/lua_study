@@ -156,6 +156,7 @@ typedef struct
 typedef struct
 {
     struct list_head node;
+    int id;
     int entry;
     int exit;
     int size_succ;
@@ -163,6 +164,12 @@ typedef struct
     void* successors;
     void* predecessors;
 } CodeBlock;
+
+typedef struct
+{
+    int from;
+    int to;
+} Jump;
 
 typedef struct
 {
@@ -199,17 +206,8 @@ typedef struct
         INIT_LIST_HEAD( &( pfb )->code_block ); \
     }
 
-void read_string( FILE* f, String* str );
-void read_instruction( FILE* f, InstructionList* il );
-void read_constant( FILE* f, ConstantList* cl );
-void read_linepos( FILE* f, InstructionList* il );
-void read_local( FILE* f, LocalList *ll );
-void read_upvalue( FILE* f, UpvalueList* ul );
 void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr );
 
-void format_luaheader( LuaHeader* lh );
-void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* fo );
-void format_constant( Constant* c, int global );
 void format_function( FunctionBlock* fb, OptArg* fo );
 
 #endif

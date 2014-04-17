@@ -104,6 +104,25 @@ constant folding
     s 是否显示摘要信息
 	v 是否显示描述字节码的冗余信息
 	
+会产生函数调用的字节码
+    CALL
+    TAILCALL
+    ADD
+    SUB
+    MUL
+    DIV
+    MOD
+    POW
+    UNM
+    CONCAT
+    LEN
+    EQ
+    LT
+    INDEX
+    NEWINDEX
+    元方法可能会是一个函数
+    如果这个函数会修改外部的数据，那么在block内做local opt的时候需要非常注意
+
 code block & flow analyzer
     通常会修改PC的是block的开始或结束
     以下指令必然是block的结尾
@@ -124,21 +143,7 @@ code block & flow analyzer
         LOADBOOL
     所有移动到的PC值都会做为block的开始
 
-会产生函数调用的字节码
-    CALL
-    TAILCALL
-    ADD
-    SUB
-    MUL
-    DIV
-    MOD
-    POW
-    UNM
-    CONCAT
-    LEN
-    EQ
-    LT
-    INDEX
-    NEWINDEX
-    元方法可能会是一个函数
-    如果这个函数会修改外部的数据，那么在block内做local opt的时候需要非常注意
+TODO:
+    分析生成code的前驱和后继
+    constant folding & constant propagation
+
