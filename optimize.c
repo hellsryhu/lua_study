@@ -331,3 +331,4 @@ void optimize( FunctionBlock* fb )
         pfb++;
     }
 }
+

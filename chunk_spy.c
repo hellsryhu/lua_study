@@ -3,10 +3,21 @@
 
 extern InstructionDesc INSTRUCTION_DESC[];
 
+void output_usage()
+{
+    printf( "usage: chunk_spy [options] lc_filename\n" );
+    printf( "\t-f       flow analyse\n" );
+    printf( "\t-h       show lua header\n" );
+    printf( "\t-o name  optimize output to file 'name'\n" );
+    printf( "\t-q       quiet mode (show no function list)\n" );
+    printf( "\t-s       show instruction summary\n" );
+    printf( "\t-v       show opcode verbose info\n" );
+}
+
 int main( int argc, char* argv[] )
 {
     if( argc < 2 ) {
-        printf( "usage: chunk_spy [-fhqsv] lc_filename\n" );
+        output_usage();
         return 0;
     }
 
@@ -14,7 +25,7 @@ int main( int argc, char* argv[] )
     memset( &oa, 0, sizeof( OptArg ) );
 
     int ch;
-    while( ( ch = getopt( argc, argv, "fhoqsv" ) ) != EOF ) {
+    while( ( ch = getopt( argc, argv, "fho:qsv" ) ) != EOF ) {
         switch( ch ) {
             case 'f':
                 oa.flow = 1;
@@ -25,6 +36,7 @@ int main( int argc, char* argv[] )
             case 'o':
                 oa.flow = 1;
                 oa.optimize = 1;
+                oa.opt_output = optarg;
                 break;
             case 'q':
                 oa.quiet = 1;
@@ -35,12 +47,18 @@ int main( int argc, char* argv[] )
             case 'v':
                 oa.verbose = 1;
                 break;
+            default:
+                output_usage();
+                return 0;
         }
     }
 
-    char* filename = argv[1];
-    if( argc > 2 )
-        filename = argv[2];
+    char* filename = argv[argc-1];
+    if( oa.optimize && strcmp( filename, oa.opt_output ) == 0 ) {
+        printf( "output file can not be input file\n" );
+        output_usage();
+        return 0;
+    }
     printf( "filename:\t%s\n\n", filename );
 
     FILE* f = fopen( filename, "r" );
@@ -60,11 +78,14 @@ int main( int argc, char* argv[] )
     memset( &smr, 0, sizeof( Summary ) );
     read_function( f, &fb, 0, &smr );
 
+    fclose( f );
+
     if( oa.flow )
         flow_analysis( &fb, &oa );
 
-    if( oa.optimize )
-        optimize( &fb );
+    if( oa.optimize ) {
+        optimize( &fb, &oa );
+    }
 
     if( !oa.quiet )
         format_function( &fb, &oa );
@@ -80,6 +101,15 @@ int main( int argc, char* argv[] )
         }
     }
 
-    fclose( f );
+    if( oa.optimize ) {
+        f = fopen( oa.opt_output, "w+" );
+
+        fwrite( &lh, 1, sizeof( LuaHeader ), f );
+
+        write_function( f, &fb );
+
+        fclose( f );
+    }
+
     return 0;
 }

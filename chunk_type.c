@@ -106,10 +106,8 @@ void read_linepos( FILE* f, InstructionList* il )
 {
     int size;
     fread( &size, sizeof( int ), 1, f );
-    if( size != il->size ) {
-        printf( "!!!ERROR!!! instruction size != line pos size\n" );
-        exit( 0 );
-    }
+    if( !size )
+        return;
     int* lineposes = malloc( sizeof( int )*size );
     fread( lineposes, sizeof( int ), size, f );
     int i;
@@ -121,6 +119,8 @@ void read_linepos( FILE* f, InstructionList* il )
 void read_local( FILE* f, LocalList* ll )
 {
     fread( &ll->size, sizeof( int ), 1, f );
+    if( !ll->size )
+        return;
     ll->value = realloc( ll->value, sizeof( Local )*ll->size );
     memset( ll->value, 0, sizeof( Local )*ll->size );
     int i;
@@ -134,6 +134,8 @@ void read_local( FILE* f, LocalList* ll )
 void read_upvalue( FILE* f, UpvalueList* ul )
 {
     fread( &ul->size, sizeof( int ), 1, f );
+    if( !ul->size )
+        return;
     ul->value = realloc( ul->value, sizeof( String )*ul->size );
     memset( ul->value, 0, sizeof( String )*ul->size );
     int i;
@@ -161,10 +163,9 @@ void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr )
     fread( &fb->num_func, sizeof( int ), 1, f );
     fb->funcs = realloc( fb->funcs, sizeof( FunctionBlock )*fb->num_func );
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
-    for( i = 0; i < fb->num_func; i++ ) {
+    for( i = 0; i < fb->num_func; i++, pfb++ ) {
         INIT_FUNCTION_BLOCK( pfb );
         read_function( f, pfb, lv+1, smr );
-        pfb++;
     }
     read_linepos( f, &fb->instruction_list );
     read_local( f, &fb->local_list );
@@ -441,3 +442,105 @@ void format_function( FunctionBlock* fb, OptArg* oa )
         }
     }
 }
+
+//--------------------------------------------------
+// write functions
+//--------------------------------------------------
+
+void write_string( FILE* f, String* str )
+{
+    fwrite( &str->size, sizeof( size_t ), 1, f );
+    fwrite( str->value, 1, str->size, f );
+}
+
+void write_instruction( FILE* f, InstructionList* il )
+{
+    fwrite( &il->size, sizeof( int ), 1, f );
+    int i;
+    for( i = 0; i < il->size; i++ )
+        fwrite( &il->value[i].opcode, sizeof( unsigned int ), 1, f );
+}
+
+void write_constant( FILE* f, ConstantList* cl )
+{
+    fwrite( &cl->size, sizeof( int ), 1, f );
+    int i;
+    for( i = 0; i < cl->size; i++ ) {
+        Constant* c = &cl->value[i];
+        fwrite( &c->type, sizeof( unsigned char ), 1, f );
+        switch( c->type ) {
+            case LUA_TBOOLEAN:
+                fwrite( &c->boolean, sizeof( unsigned char ), 1, f );
+                break;
+            case LUA_TNUMBER:
+                fwrite( &c->number, sizeof( double ), 1, f );
+                break;
+            case LUA_TSTRING:
+                write_string( f, &c->string );
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void write_linepos( FILE* f, InstructionList* il )
+{
+    if( !il->size )
+        return;
+
+    if( il->value[0].line_pos == 0 ) {
+        int size = 0;
+        fwrite( &size, sizeof( int ), 1, f );
+        return;
+    }
+    else {
+        fwrite( &il->size, sizeof( int ), 1, f );
+        int i;
+        for( i = 0; i < il->size; i++ )
+            fwrite( &il->value[i].line_pos, sizeof( int ), 1, f );
+    }
+}
+
+void write_local( FILE* f, LocalList* ll )
+{
+    fwrite( &ll->size, sizeof( int ), 1, f );
+    int i;
+    for( i = 0; i < ll->size; i++ ) {
+        Local* l = &ll->value[i];
+        write_string( f, &l->name );
+        fwrite( &l->start, sizeof( int ), 2, f );
+    }
+}
+
+void write_upvalue( FILE* f, UpvalueList* ul )
+{
+    fwrite( &ul->size, sizeof( int ), 1, f );
+    int i;
+    for( i = 0; i < ul->size; i++ ) {
+        String* s = &ul->value[i];
+        write_string( f, s );
+    }
+}
+
+void write_function( FILE* f, FunctionBlock* fb )
+{
+    write_string( f, &fb->source_name );
+
+    fwrite( &fb->first_line, 1, 12, f );
+
+    write_instruction( f, &fb->instruction_list );
+    
+    write_constant( f, &fb->constant_list );
+
+    fwrite( &fb->num_func, sizeof( int ), 1, f );
+    FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
+    int i;
+    for( i = 0; i < fb->num_func; i++, pfb++ )
+        write_function( f, pfb );
+
+    write_linepos( f, &fb->instruction_list );
+    write_local( f, &fb->local_list );
+    write_upvalue( f, &fb->upvalue_list );
+}
+

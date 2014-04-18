@@ -142,10 +142,10 @@ code block & flow analyzer
     还有个特殊的例子，根据参数C，是指令中的立即数，来决定是否会跳转，所以需要判断一下C的值才决定是否是结束
         LOADBOOL
     所有移动到的PC值都会做为block的开始
-
-TODO:
     分析生成code的前驱和后继
         用于做死代码消除
         需要处理JMP, RETURN等语义
+
+TODO:
     constant folding & constant propagation
 

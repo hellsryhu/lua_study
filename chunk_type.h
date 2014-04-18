@@ -19,6 +19,7 @@ typedef struct
     char quiet;
     char summary;
     char verbose;
+    char* opt_output;
 } OptArg;
 
 typedef struct
@@ -214,5 +215,7 @@ void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr );
 
 void format_luaheader( LuaHeader* lh );
 void format_function( FunctionBlock* fb, OptArg* fo );
+
+void write_function( FILE* f, FunctionBlock* fb );
 
 #endif
