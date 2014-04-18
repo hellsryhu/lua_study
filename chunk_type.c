@@ -390,10 +390,10 @@ void format_function( FunctionBlock* fb, OptArg* oa )
     FORMAT_LEVEL( "instruction list:\n" );
     struct list_head* pos = fb->code_block_node.next;
     CodeBlock* cb = 0;
-    if( oa->flow && pos != &fb->code_block_node )
+    if( oa->hint && pos != &fb->code_block_node )
         cb = list_entry( pos, CodeBlock, node );
     for( i = 0; i < fb->instruction_list.size; i++ ) {
-        if( oa->flow && cb && cb->entry == i ) {
+        if( oa->hint && cb && cb->entry == i ) {
             FORMAT_LEVEL( "\tblock. %d\n", cb->id );
 
             CodeBlock** ppcb;
@@ -418,7 +418,7 @@ void format_function( FunctionBlock* fb, OptArg* oa )
             }
 
             if( oa->optimize && !cb->reachable ) {
-                FORMAT_LEVEL( "\t(o) unreachable, dead code\n" );
+                FORMAT_LEVEL( "\t! unreachable, dead code\n" );
             }
 
             pos = pos->next;

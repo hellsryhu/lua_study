@@ -6,9 +6,10 @@ extern InstructionDesc INSTRUCTION_DESC[];
 void output_usage()
 {
     printf( "usage: chunk_spy [options] lc_filename\n" );
-    printf( "\t-f       flow analyse\n" );
-    printf( "\t-h       show lua header\n" );
+    printf( "\t-h       show optimize hint\n" );
+    printf( "\t-H       show lua header\n" );
     printf( "\t-o name  optimize output to file 'name'\n" );
+    printf( "\t-O       show optimized code\n" );
     printf( "\t-q       quiet mode (show no function list)\n" );
     printf( "\t-s       show instruction summary\n" );
     printf( "\t-v       show opcode verbose info\n" );
@@ -25,18 +26,21 @@ int main( int argc, char* argv[] )
     memset( &oa, 0, sizeof( OptArg ) );
 
     int ch;
-    while( ( ch = getopt( argc, argv, "fho:qsv" ) ) != EOF ) {
+    while( ( ch = getopt( argc, argv, "hHo:Oqsv" ) ) != EOF ) {
         switch( ch ) {
-            case 'f':
-                oa.flow = 1;
-                break;
             case 'h':
+                oa.optimize = 1;
+                oa.hint = 1;
+                break;
+            case 'H':
                 oa.header = 1;
                 break;
             case 'o':
-                oa.flow = 1;
                 oa.optimize = 1;
                 oa.opt_output = optarg;
+                break;
+            case 'O':
+                oa.optimize = 1;
                 break;
             case 'q':
                 oa.quiet = 1;
@@ -54,7 +58,7 @@ int main( int argc, char* argv[] )
     }
 
     char* filename = argv[argc-1];
-    if( oa.optimize && strcmp( filename, oa.opt_output ) == 0 ) {
+    if( oa.opt_output && strcmp( filename, oa.opt_output ) == 0 ) {
         printf( "output file can not be input file\n" );
         output_usage();
         return 0;
@@ -80,15 +84,14 @@ int main( int argc, char* argv[] )
 
     fclose( f );
 
-    if( oa.flow )
-        flow_analysis( &fb, &oa );
-
-    if( oa.optimize ) {
-        optimize( &fb, &oa );
-    }
-
-    if( !oa.quiet )
+    if( !oa.quiet ) {
+        if( oa.hint ) {
+            flow_analysis( &fb, &oa );
+            optimize( &fb, &oa );
+        }
         format_function( &fb, &oa );
+        printf( "\n" );
+    }
 
     if( oa.summary ) {
         printf( "total instruction num: %d\n", smr.total_instruction_num );
@@ -99,16 +102,26 @@ int main( int argc, char* argv[] )
                 printf( "\t%s\t%d\n", id->name, smr.instruction_num[i] );
             }
         }
+        printf( "\n" );
     }
 
-    if( oa.optimize ) {
-        f = fopen( oa.opt_output, "w+" );
+    if( oa.optimize && !oa.hint ) {
+        flow_analysis( &fb, &oa );
 
-        fwrite( &lh, 1, sizeof( LuaHeader ), f );
+        optimize( &fb, &oa );
 
-        write_function( f, &fb );
+        if( oa.opt_output ) {
+            f = fopen( oa.opt_output, "w+" );
 
-        fclose( f );
+            fwrite( &lh, 1, sizeof( LuaHeader ), f );
+
+            write_function( f, &fb );
+
+            fclose( f );
+        }
+        else {
+            format_function( &fb, &oa );
+        }
     }
 
     return 0;

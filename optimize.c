@@ -314,20 +314,49 @@ void* dce_iterator( void* node, void* next )
         return cb->num_succ > 0 ? *succ : 0;
 }
 
-void dead_code_elimination( FunctionBlock* fb )
+void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
 {
     CodeBlock* cb = fb->code_block[0];
     dfs( cb, dce_traverse, dce_iterator );
+
+    if( oa->hint )
+        return;
+
+    struct list_head* pos = fb->code_block_node.next;
+    while( pos != &fb->code_block_node ) {
+        cb = list_entry( pos, CodeBlock, node );
+        if( !cb->reachable ) {
+            struct list_head* del_pos = pos;
+            pos = pos->prev;
+
+            // code block
+            list_del( del_pos );
+
+            // instructions
+            int size = fb->instruction_list.size-( cb->exit-cb->entry+1 );
+            Instruction* ins = ( Instruction* )malloc( size*sizeof( Instruction ) );
+            int i;
+            Instruction* in = ins;
+            for( i = 0; i < cb->entry; i++, in++ )
+                *in = fb->instruction_list.value[i];
+            for( i = cb->exit+1; i < fb->instruction_list.size; i++, in++ )
+                *in = fb->instruction_list.value[i];
+            fb->instruction_list.size = size;
+            free( fb->instruction_list.value );
+            fb->instruction_list.value = ins;
+        }
+        pos = pos->next;
+    }
 }
 
-void optimize( FunctionBlock* fb )
+void optimize( FunctionBlock* fb, OptArg* oa )
 {
-    dead_code_elimination( fb );
+    dead_code_elimination( fb, oa );
 
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
     int i;
     for( i = 0; i < fb->num_func; i++ ) {
-        optimize( pfb );
+        optimize( pfb, oa );
         pfb++;
     }
 }

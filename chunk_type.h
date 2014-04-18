@@ -13,8 +13,8 @@
 
 typedef struct
 {
-    char flow;
     char header;
+    char hint;
     char optimize;
     char quiet;
     char summary;
