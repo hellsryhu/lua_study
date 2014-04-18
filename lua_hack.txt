@@ -145,5 +145,7 @@ code block & flow analyzer
 
 TODO:
     分析生成code的前驱和后继
+        用于做死代码消除
+        需要处理JMP, RETURN等语义
     constant folding & constant propagation
 

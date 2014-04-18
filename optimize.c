@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
+#include "utils.h"
 #include "optimize.h"
 
 //--------------------------------------------------
@@ -10,7 +11,7 @@
 #define CODE_BLOCK_EXIT( id ) \
     { \
         cb->exit = id; \
-        list_add_tail( &cb->node, &fb->code_block ); \
+        list_add_tail( &cb->node, &fb->code_block_node ); \
     }
 
 #define CODE_BLOCK_ENTRY( id ) \
@@ -31,109 +32,76 @@ int is_greater_to( void* a, void* b )
     return ja->to > jb->to;
 }
 
-void quick_sort( void** array, int start, int end, int ( *is_greater )( void*, void* ) )
+int get_code_block( FunctionBlock* fb, int instruction_id )
 {
-    if( start >= end ) return;
-
-    int pivot = ( start+end )/2;
     int i;
-    for( i = start; i <= end; i++ ) {
-        if( ( i < pivot && is_greater( array[i], array[pivot] ) ) || ( i > pivot && is_greater( array[pivot], array[i] ) ) ) {
-            void* tmp = array[i];
-            array[i] = array[pivot];
-            array[pivot] = tmp;
-            pivot = i;
-        }
-    }
-    quick_sort( array, start, pivot-1, is_greater );
-    quick_sort( array, pivot+1, end, is_greater );
-}
-
-CodeBlock* get_code_block( FunctionBlock* fb, int instruction_id )
-{
-    struct list_head* pos;
-    list_for_each( pos, &fb->code_block ) {
-        CodeBlock* cb = list_entry( pos, CodeBlock, node );
+    CodeBlock** ppcb = fb->code_block;
+    for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
+        CodeBlock* cb = *ppcb;
         if( instruction_id >= cb->entry && instruction_id <= cb->exit )
-            return cb;
+            return i;
     }
-    return 0;
+    return -1;
 }
 
 void create_successors( FunctionBlock* fb, CodeBlock* cb, int first, int last, struct list_head* pos, Jump** jmps_from )
 {
-    int size = last-first;
-    int contain_next = 0;
+    int* to_blocks = ( int* )malloc( fb->num_code_block*sizeof( int ) );
+    memset( to_blocks, 0, fb->num_code_block*sizeof( int ) );
+
     int i;
-    if( pos != fb->code_block.prev ) {
-        // last block
-        for( i = first; i < last; i++ ) {
-            CodeBlock* tcb = get_code_block( fb, jmps_from[i]->to );
-            if( tcb->id == cb->id+1 ) {
-                contain_next = 1;
-                break;
-            }
-        }
-        if( !contain_next )
+    for( i = first; i < last; i++ ) {
+        int to_block = get_code_block( fb, jmps_from[i]->to );
+        if( to_block >= 0 )
+            to_blocks[to_block]++;
+    }
+
+    int size = 0;
+    int* blk = to_blocks;
+    for( i = 0; i < fb->num_code_block; i++, blk++ ) {
+        if( *blk > 0 )
             size++;
     }
 
+    cb->num_succ = size;
     cb->successors = malloc( size*sizeof( CodeBlock* ) );
-    cb->size_succ = size;
     CodeBlock** succ = ( CodeBlock** )cb->successors;
-
-    for( i = first; i < last; i++ ) {
-        int to = jmps_from[i]->to;
-        *succ = get_code_block( fb, to );
-        succ++;
+    blk = to_blocks;
+    for( i = 0; i < fb->num_code_block; i++, blk++ ) {
+        if( *blk > 0 )
+            *succ++ = fb->code_block[i];
     }
-
-    if( pos != fb->code_block.prev && !contain_next )
-        *succ = list_entry( pos->next, CodeBlock, node );
-    
-    succ = ( CodeBlock** )cb->successors;
-    for( i = 0; i < size; i++ ) {
-        //printf( "cb: %d, succ: %d\n", cb->id, ( *succ )->id );
-        succ++;
-    }
+    free( to_blocks );
 }
  
 void create_predecessors( FunctionBlock* fb, CodeBlock* cb, int first, int last, struct list_head* pos, Jump** jmps_to )
 {
-    int size = last-first;
-    int contain_prev = 0;
+    int* from_blocks = ( int* )malloc( fb->num_code_block*sizeof( int ) );
+    memset( from_blocks, 0, fb->num_code_block*sizeof( int ) );
+
     int i;
-    if( pos != fb->code_block.next ) {
-        // first block
-        for( i = first; i < last; i++ ) {
-            CodeBlock* tcb = get_code_block( fb, jmps_to[i]->from );
-            if( tcb->id == cb->id-1 ) {
-                contain_prev = 1;
-                break;
-            }
-        }
-        if( !contain_prev )
+    for( i = first; i < last; i++ ) {
+        int from_block = get_code_block( fb, jmps_to[i]->from );
+        if( from_block >= 0 )
+            from_blocks[from_block]++;
+    }
+
+    int size = 0;
+    int* blk = from_blocks;
+    for( i = 0; i < fb->num_code_block; i++, blk++ ) {
+        if( *blk > 0 )
             size++;
     }
 
+    cb->num_pred = size;
     cb->predecessors = malloc( size*sizeof( CodeBlock* ) );
-    cb->size_pred = size;
     CodeBlock** pred = ( CodeBlock** )cb->predecessors;
-
-    for( i = first; i < last; i++ ) {
-        int from = jmps_to[i]->from;
-        *pred = get_code_block( fb, from );
-        pred++;
+    blk = from_blocks;
+    for( i = 0; i < fb->num_code_block; i++, blk++ ) {
+        if( *blk > 0 )
+            *pred++ = fb->code_block[i];
     }
-
-    if( pos != fb->code_block.next && !contain_prev )
-        *pred = list_entry( pos->prev, CodeBlock, node );
-    
-    pred = ( CodeBlock** )cb->predecessors;
-    for( i = 0; i < size; i++ ) {
-        //printf( "cb: %d, pred: %d\n", cb->id, ( *pred )->id );
-        pred++;
-    }
+    free( from_blocks );
 }
    
 void flow_analysis( FunctionBlock* fb, OptArg* oa )
@@ -146,7 +114,8 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
     memset( jmps_to, 0, fb->instruction_list.size*sizeof( Jump* ) );
     int jmps_idx = 0;
 
-    INIT_LIST_HEAD( &fb->code_block );
+    // get jumps
+    INIT_LIST_HEAD( &fb->code_block_node );
     CodeBlock* cb = ( CodeBlock* )malloc( sizeof( CodeBlock ) );
     memset( cb, 0, sizeof( CodeBlock ) );
     int i;
@@ -174,6 +143,8 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
             case FORLOOP:
                 CODE_BLOCK_EXIT( i );
                 CODE_BLOCK_ENTRY( i+1 );
+                jmps[jmps_idx].from = i;
+                jmps[jmps_idx++].to = i+1;
                 break;
             case RETURN:
             case TAILCALL:
@@ -185,6 +156,8 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
                 if( i != 0 ) {
                     CODE_BLOCK_EXIT( i-1 );
                     CODE_BLOCK_ENTRY( i );
+                    jmps[jmps_idx].from = i-1;
+                    jmps[jmps_idx++].to = i;
                 }
                 break;
             // must with jmp
@@ -203,7 +176,7 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
     }
     if( cb ) {
         cb->exit = fb->instruction_list.size-1;
-        list_add_tail( &cb->node, &fb->code_block );
+        list_add_tail( &cb->node, &fb->code_block_node );
     }
 
     for( i = 0; i < jmps_idx; i++ ) {
@@ -212,9 +185,9 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
     }
     quick_sort( ( void** )jmps_to, 0, jmps_idx-1, is_greater_to );
 
-    struct list_head* pos = fb->code_block.next;
+    // complete blocks
+    struct list_head* pos = fb->code_block_node.next;
     cb = list_entry( pos, CodeBlock, node );
-    cb->id = 1;
     i = 0;
     while( i < jmps_idx ) {
         if( jmps_to[i]->to == cb->entry )
@@ -223,7 +196,6 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
             CodeBlock* ocb = cb;
             cb = ( CodeBlock* )malloc( sizeof( CodeBlock ) );
             memset( cb, 0, sizeof( CodeBlock ) );
-            cb->id = ocb->id+1;
             cb->entry = jmps_to[i]->to;
             cb->exit = ocb->exit;
 
@@ -236,31 +208,32 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
         }
         else if( jmps_to[i]->to > cb->exit ) {
             pos = pos->next;
-            if( pos != &fb->code_block ) {
-                CodeBlock* ocb = cb;
+            if( pos != &fb->code_block_node ) {
                 cb = list_entry( pos, CodeBlock, node );
-                cb->id = ocb->id+1;
             }
             else
                 break;
         }
     }
 
-    /*
-    list_for_each( pos, &fb->code_block ) {
+    i = 0;
+    list_for_each( pos, &fb->code_block_node ) {
         cb = list_entry( pos, CodeBlock, node );
-        printf( "cb: %d, entry: %d, exit: %d\n", cb->id, cb->entry, cb->exit );
+        cb->id = ++i;
     }
-    */
+
+    fb->num_code_block = i;
+    fb->code_block = ( CodeBlock** )malloc(i*sizeof( CodeBlock* ) );
+    CodeBlock** ppcb = fb->code_block;
+    list_for_each( pos, &fb->code_block_node )
+        *ppcb++ = list_entry( pos, CodeBlock, node );
 
     // gen successor
-    pos = fb->code_block.next;
-    cb = list_entry( pos, CodeBlock, node );
+    int j = 0;
+    cb = fb->code_block[j];
     i = 0;
     int first = 0;
     while( i < jmps_idx ) {
-        //printf( "i: %d, from: %d, to: %d, cb: %d, entry: %d, exit: %d, to: %d, from: %d\n",
-                //i, jmps_from[i]->from, jmps_from[i]->to, cb->id, cb->entry, cb->exit, jmps_to[i]->to, jmps_to[i]->from );
         if( jmps_from[i]->from <= cb->exit )
             i++;
         else {
@@ -268,27 +241,22 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
 
             first = i;
 
-            pos = pos->next;
-            if( pos != &fb->code_block )
-                cb = list_entry( pos, CodeBlock, node );
+            cb = fb->code_block[++j];
         }
     }
     create_successors( fb, cb, first, i, pos, jmps_from );
 
-    while( pos != &fb->code_block ) {
-        cb = list_entry( pos, CodeBlock, node );
+    for( i = j+1; i < fb->num_code_block; i++ ) {
+        cb = fb->code_block[i];
         create_successors( fb, cb, 0, -1, pos, jmps_from );
-        pos = pos->next;
     }
 
     // gen predecessor
-    pos = fb->code_block.next;
-    cb = list_entry( pos, CodeBlock, node );
+    j = 0;
+    cb = fb->code_block[j];
     i = 0;
     first = 0;
     while( i < jmps_idx ) {
-        //printf( "i: %d, from: %d, to: %d, cb: %d, entry: %d, exit: %d, to: %d, from: %d\n",
-                //i, jmps_from[i]->from, jmps_from[i]->to, cb->id, cb->entry, cb->exit, jmps_to[i]->to, jmps_to[i]->from );
         if( jmps_to[i]->to <= cb->exit )
             i++;
         else {
@@ -296,17 +264,14 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
 
             first = i;
 
-            pos = pos->next;
-            if( pos != &fb->code_block )
-                cb = list_entry( pos, CodeBlock, node );
+            cb = fb->code_block[++j];
         }
     }
     create_predecessors( fb, cb, first, i, pos, jmps_to );
 
-    while( pos != &fb->code_block ) {
-        cb = list_entry( pos, CodeBlock, node );
+    for( i = j+1; i < fb->num_code_block; i++ ) {
+        cb = fb->code_block[i];
         create_predecessors( fb, cb, 0, -1, pos, jmps_to );
-        pos = pos->next;
     }
 
     free( jmps );
@@ -316,6 +281,53 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
     for( i = 0; i < fb->num_func; i++ ) {
         flow_analysis( pfb, oa );
+        pfb++;
+    }
+}
+
+//--------------------------------------------------
+// optimize functions
+//--------------------------------------------------
+
+int dce_traverse( void* node )
+{
+    CodeBlock* cb = ( CodeBlock* )node;
+    if( cb->reachable )
+        return 0;
+    cb->reachable = 1;
+    return 1;
+}
+
+void* dce_iterator( void* node, void* next )
+{
+    CodeBlock* cb = ( CodeBlock* )node;
+    CodeBlock** succ = cb->successors;
+    if( next ) {
+        int i;
+        for( i = 0; i < cb->num_succ-1; i++, succ++ ) {
+            if( next == *succ )
+                return *( succ+1 );
+        }
+        return 0;
+    }
+    else
+        return cb->num_succ > 0 ? *succ : 0;
+}
+
+void dead_code_elimination( FunctionBlock* fb )
+{
+    CodeBlock* cb = fb->code_block[0];
+    dfs( cb, dce_traverse, dce_iterator );
+}
+
+void optimize( FunctionBlock* fb )
+{
+    dead_code_elimination( fb );
+
+    FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
+    int i;
+    for( i = 0; i < fb->num_func; i++ ) {
+        optimize( pfb );
         pfb++;
     }
 }

@@ -200,7 +200,37 @@ void format_luaheader( LuaHeader* lh )
     else \
         printf( "-" );
     
-
+void format_constant( Constant* c, int global )
+{
+    switch( c->type ) {
+        case LUA_TNIL:
+            printf( "nil" );
+            break;
+        case LUA_TBOOLEAN:
+            if( c->boolean )
+                printf( "true" );
+            else
+                printf( "false" );
+            break;
+        case LUA_TNUMBER:
+            {
+                double fractional = c->number-( long long )( c->number );
+                if( fractional == 0 )
+                    printf( "%lld", ( long long )( c->number ) );
+                else
+                    printf( "%f", c->number );
+            }
+            break;
+        case LUA_TSTRING:
+            if( global )
+                printf( "%s", c->string.value );
+            else
+                printf( "\"%s\"", c->string.value );
+            break;
+        default:
+            break;
+    }
+}
 
 void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* oa )
 {
@@ -315,38 +345,6 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* 
         printf( "\n" );
 }
 
-void format_constant( Constant* c, int global )
-{
-    switch( c->type ) {
-        case LUA_TNIL:
-            printf( "nil" );
-            break;
-        case LUA_TBOOLEAN:
-            if( c->boolean )
-                printf( "true" );
-            else
-                printf( "false" );
-            break;
-        case LUA_TNUMBER:
-            {
-                double fractional = c->number-( long long )( c->number );
-                if( fractional == 0 )
-                    printf( "%lld", ( long long )( c->number ) );
-                else
-                    printf( "%f", c->number );
-            }
-            break;
-        case LUA_TSTRING:
-            if( global )
-                printf( "%s", c->string.value );
-            else
-                printf( "\"%s\"", c->string.value );
-            break;
-        default:
-            break;
-    }
-}
-
 void format_function( FunctionBlock* fb, OptArg* oa )
 {
     int i;
@@ -355,44 +353,75 @@ void format_function( FunctionBlock* fb, OptArg* oa )
         FORMAT_LEVEL( "source name:\t%s\n", fb->source_name.value );
     }
     else {
-        FORMAT_LEVEL( "line defined:\t%d\n", fb->first_line );
-        FORMAT_LEVEL( "last line defined:\t%d\n", fb->last_line );
+        FORMAT_LEVEL( "line defined:\t%d ~ %d\n", fb->first_line, fb->last_line );
     }
-    FORMAT_LEVEL( "number of upvalues:\t%d\n", fb->num_upvalue );
+    //FORMAT_LEVEL( "number of upvalues:\t%d\n", fb->num_upvalue );
     FORMAT_LEVEL( "number of parameters:\t%d\n", fb->num_parameter );
     FORMAT_LEVEL( "is_vararg flag:\t%d\n", fb->is_vararg );
     FORMAT_LEVEL( "maximum stack size:\t%d\n", fb->max_stack_size );
 
-    FORMAT_LEVEL( "constant list:\n" );
-    for( i = 0; i < fb->constant_list.size; i++ ) {
-        FORMAT_LEVEL( "\t%d.\t", i );
-        Constant* c = &fb->constant_list.value[i];
-        format_constant( c, 0 );
-        printf( "\n" );
+    if( fb->constant_list.size > 0 ) {
+        FORMAT_LEVEL( "constant list:\n" );
+        for( i = 0; i < fb->constant_list.size; i++ ) {
+            FORMAT_LEVEL( "\t%d.\t", i );
+            Constant* c = &fb->constant_list.value[i];
+            format_constant( c, 0 );
+            printf( "\n" );
+        }
     }
 
-    FORMAT_LEVEL( "local list:\n" );
-    for( i = 0; i < fb->local_list.size; i++ ) {
-        Local* l = &fb->local_list.value[i];
-        FORMAT_LEVEL( "\t%d.\t%s\t(%d,%d)\n", i, l->name.value, l->start, l->end );
+    if( fb->local_list.size > 0 ) {
+        FORMAT_LEVEL( "local list:\n" );
+        for( i = 0; i < fb->local_list.size; i++ ) {
+            Local* l = &fb->local_list.value[i];
+            FORMAT_LEVEL( "\t%d.\t%s\t(%d,%d)\n", i, l->name.value, l->start, l->end );
+        }
     }
 
-    FORMAT_LEVEL( "upvalue list:\n" );
-    for( i = 0; i < fb->upvalue_list.size; i++ ) {
-        String* s = &fb->upvalue_list.value[i];
-        FORMAT_LEVEL( "\t%d.\t%s\n", i, s->value );
+    if( fb->upvalue_list.size > 0 ) {
+        FORMAT_LEVEL( "upvalue list:\n" );
+        for( i = 0; i < fb->upvalue_list.size; i++ ) {
+            String* s = &fb->upvalue_list.value[i];
+            FORMAT_LEVEL( "\t%d.\t%s\n", i, s->value );
+        }
     }
 
     FORMAT_LEVEL( "instruction list:\n" );
-    struct list_head* pos = fb->code_block.next;
+    struct list_head* pos = fb->code_block_node.next;
     CodeBlock* cb = 0;
-    if( oa->flow && pos != &fb->code_block )
+    if( oa->flow && pos != &fb->code_block_node )
         cb = list_entry( pos, CodeBlock, node );
     for( i = 0; i < fb->instruction_list.size; i++ ) {
         if( oa->flow && cb && cb->entry == i ) {
             FORMAT_LEVEL( "\tblock. %d\n", cb->id );
+
+            CodeBlock** ppcb;
+            int j;
+            if( cb->num_pred > 0 ) {
+                FORMAT_LEVEL( "\tpredecessors: " );
+                ppcb = ( CodeBlock** )cb->predecessors;
+                for( j = 0; j < cb->num_pred; j++ ) {
+                    printf( "%d, ", ( *ppcb )->id );
+                    ppcb++;
+                }
+                printf( "\n" );
+            }
+            if( cb->num_succ > 0 ) {
+                FORMAT_LEVEL( "\tsuccessors: " );
+                CodeBlock** ppcb = ( CodeBlock** )cb->successors;
+                for( j = 0; j < cb->num_succ; j++ ) {
+                    printf( "%d, ", ( *ppcb )->id );
+                    ppcb++;
+                }
+                printf( "\n" );
+            }
+
+            if( oa->optimize && !cb->reachable ) {
+                FORMAT_LEVEL( "\t(o) unreachable, dead code\n" );
+            }
+
             pos = pos->next;
-            if( pos != &fb->code_block )
+            if( pos != &fb->code_block_node )
                 cb = list_entry( pos, CodeBlock, node );
             else
                 cb = 0;
@@ -401,12 +430,14 @@ void format_function( FunctionBlock* fb, OptArg* oa )
         format_instruction( fb, in, i, oa );
     }
 
-    FORMAT_LEVEL( "function prototype list:\n" );
+    if( fb->num_func > 0 ) {
+        FORMAT_LEVEL( "function prototype list:\n" );
 
-    FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
-    for( i = 0; i < fb->num_func; i++ ) {
-        format_function( pfb, oa );
-        pfb++;
-        printf( "\n" );
+        FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
+        for( i = 0; i < fb->num_func; i++ ) {
+            format_function( pfb, oa );
+            pfb++;
+            printf( "\n" );
+        }
     }
 }

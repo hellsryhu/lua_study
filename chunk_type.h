@@ -15,6 +15,7 @@ typedef struct
 {
     char flow;
     char header;
+    char optimize;
     char quiet;
     char summary;
     char verbose;
@@ -159,10 +160,11 @@ typedef struct
     int id;
     int entry;
     int exit;
-    int size_succ;
-    int size_pred;
+    int num_succ;
+    int num_pred;
     void* successors;
     void* predecessors;
+    char reachable;
 } CodeBlock;
 
 typedef struct
@@ -187,7 +189,9 @@ typedef struct
     LocalList local_list;
     UpvalueList upvalue_list;
     int level;
-    struct list_head code_block;
+    struct list_head code_block_node;
+    int num_code_block;
+    CodeBlock** code_block;
 } FunctionBlock;
 
 typedef struct
@@ -203,11 +207,12 @@ typedef struct
 #define INIT_FUNCTION_BLOCK( pfb ) \
     { \
         memset( ( pfb ), 0, sizeof( FunctionBlock ) ); \
-        INIT_LIST_HEAD( &( pfb )->code_block ); \
+        INIT_LIST_HEAD( &( pfb )->code_block_node ); \
     }
 
 void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr );
 
+void format_luaheader( LuaHeader* lh );
 void format_function( FunctionBlock* fb, OptArg* fo );
 
 #endif

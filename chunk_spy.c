@@ -14,13 +14,17 @@ int main( int argc, char* argv[] )
     memset( &oa, 0, sizeof( OptArg ) );
 
     int ch;
-    while( ( ch = getopt( argc, argv, "fhqsv" ) ) != EOF ) {
+    while( ( ch = getopt( argc, argv, "fhoqsv" ) ) != EOF ) {
         switch( ch ) {
             case 'f':
                 oa.flow = 1;
                 break;
             case 'h':
                 oa.header = 1;
+                break;
+            case 'o':
+                oa.flow = 1;
+                oa.optimize = 1;
                 break;
             case 'q':
                 oa.quiet = 1;
@@ -37,7 +41,7 @@ int main( int argc, char* argv[] )
     char* filename = argv[1];
     if( argc > 2 )
         filename = argv[2];
-    printf( "filename:\t%s\n", filename );
+    printf( "filename:\t%s\n\n", filename );
 
     FILE* f = fopen( filename, "r" );
     if( !f )
@@ -58,6 +62,9 @@ int main( int argc, char* argv[] )
 
     if( oa.flow )
         flow_analysis( &fb, &oa );
+
+    if( oa.optimize )
+        optimize( &fb );
 
     if( !oa.quiet )
         format_function( &fb, &oa );
