@@ -11,7 +11,7 @@
 #define CODE_BLOCK_EXIT( id ) \
     { \
         cb->exit = id; \
-        list_add_tail( &cb->node, &fb->code_block_node ); \
+        list_add_tail( &cb->node, &code_block_node ); \
     }
 
 #define CODE_BLOCK_ENTRY( id ) \
@@ -115,7 +115,8 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
     int jmps_idx = 0;
 
     // get jumps
-    INIT_LIST_HEAD( &fb->code_block_node );
+    struct list_head code_block_node;
+    INIT_LIST_HEAD( &code_block_node );
     CodeBlock* cb = ( CodeBlock* )malloc( sizeof( CodeBlock ) );
     memset( cb, 0, sizeof( CodeBlock ) );
     int i;
@@ -176,7 +177,7 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
     }
     if( cb ) {
         cb->exit = fb->instruction_list.size-1;
-        list_add_tail( &cb->node, &fb->code_block_node );
+        list_add_tail( &cb->node, &code_block_node );
     }
 
     for( i = 0; i < jmps_idx; i++ ) {
@@ -186,7 +187,7 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
     quick_sort( ( void** )jmps_to, 0, jmps_idx-1, is_greater_to );
 
     // complete blocks
-    struct list_head* pos = fb->code_block_node.next;
+    struct list_head* pos = code_block_node.next;
     cb = list_entry( pos, CodeBlock, node );
     i = 0;
     while( i < jmps_idx ) {
@@ -208,7 +209,7 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
         }
         else if( jmps_to[i]->to > cb->exit ) {
             pos = pos->next;
-            if( pos != &fb->code_block_node ) {
+            if( pos != &code_block_node ) {
                 cb = list_entry( pos, CodeBlock, node );
             }
             else
@@ -217,7 +218,7 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
     }
 
     i = 0;
-    list_for_each( pos, &fb->code_block_node ) {
+    list_for_each( pos, &code_block_node ) {
         cb = list_entry( pos, CodeBlock, node );
         cb->id = ++i;
     }
@@ -225,7 +226,7 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
     fb->num_code_block = i;
     fb->code_block = ( CodeBlock** )malloc(i*sizeof( CodeBlock* ) );
     CodeBlock** ppcb = fb->code_block;
-    list_for_each( pos, &fb->code_block_node )
+    list_for_each( pos, &code_block_node )
         *ppcb++ = list_entry( pos, CodeBlock, node );
 
     // gen successor
@@ -286,69 +287,8 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
 }
 
 //--------------------------------------------------
-// optimize functions
+// instruction edit
 //--------------------------------------------------
-
-int dce_traverse( void* node )
-{
-    CodeBlock* cb = ( CodeBlock* )node;
-    if( cb->reachable )
-        return 0;
-    cb->reachable = 1;
-    return 1;
-}
-
-void* dce_iterator( void* node, void* next )
-{
-    CodeBlock* cb = ( CodeBlock* )node;
-    CodeBlock** succ = cb->successors;
-    if( next ) {
-        int i;
-        for( i = 0; i < cb->num_succ-1; i++, succ++ ) {
-            if( next == *succ )
-                return *( succ+1 );
-        }
-        return 0;
-    }
-    else
-        return cb->num_succ > 0 ? *succ : 0;
-}
-
-void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
-{
-    CodeBlock* cb = fb->code_block[0];
-    dfs( cb, dce_traverse, dce_iterator );
-
-    if( oa->hint )
-        return;
-
-    struct list_head* pos = fb->code_block_node.next;
-    while( pos != &fb->code_block_node ) {
-        cb = list_entry( pos, CodeBlock, node );
-        if( !cb->reachable ) {
-            struct list_head* del_pos = pos;
-            pos = pos->prev;
-
-            // code block
-            list_del( del_pos );
-
-            delete_instruction( fb, cb->entry, cb->exit );
-        }
-        pos = pos->next;
-    }
-}
-
-void optimize( FunctionBlock* fb, OptArg* oa )
-{
-    dead_code_elimination( fb, oa );
-
-    FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
-    int i;
-    for( i = 0; i < fb->num_func; i++ ) {
-        optimize( pfb, oa );
-        pfb++;
-    }
-}
 
 void delete_instruction( FunctionBlock* fb, int from, int to )
 {
@@ -361,8 +301,15 @@ void delete_instruction( FunctionBlock* fb, int from, int to )
     // 不能删整个函数，至少要有一个return
     if( del_cnt == old_size ) return;
 
-    // update jmp
+    // 不能跨code block删
+    CodeBlock** ppcb = fb->code_block;
     int i;
+    for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
+        CodeBlock* cb = *ppcb;
+        if( ( from < cb->entry && to > cb->entry ) || ( from < cb->exit && to > cb->exit ) ) return;
+    }
+
+    // update jmp
     for( i = 0; i < fb->instruction_list.size; i++ ) {
         Instruction* in = &fb->instruction_list.value[i];
         InstructionDetail ind;
@@ -455,8 +402,168 @@ void delete_instruction( FunctionBlock* fb, int from, int to )
         fb->local_list.value = new_locals;
     }
 
-    // TODO
     // update code block
+    ppcb = fb->code_block;
+    for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
+        CodeBlock* cb = *ppcb;
+        if( cb->exit >= to )
+            cb->exit -= del_cnt;
+        if( cb->entry >= from )
+            cb->entry -= del_cnt;
+    }
+
+    // TODO
     // update constant
 }
 
+void insert_instruction( FunctionBlock* fb, int pos, Instruction* in )
+{
+    // update jmp
+    int i;
+    for( i = 0; i < fb->instruction_list.size; i++ ) {
+        Instruction* in = &fb->instruction_list.value[i];
+        InstructionDetail ind;
+        get_instruction_detail( in, &ind );
+        switch( ind.op ) {
+            case JMP:
+            case FORLOOP:
+            case FORPREP:
+                {
+                    int jmp_to = i+ind.sBx+1;
+                    if( i < pos && jmp_to >= pos )
+                        ind.sBx++;
+                    else if( i >= pos && jmp_to < pos )
+                        ind.sBx--;
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    // update instruction list
+    int old_size = fb->instruction_list.size;
+    fb->instruction_list.size++;
+    Instruction* new_insts = malloc( sizeof( Instruction )*fb->instruction_list.size );
+    if( pos > 0 )
+        memcpy( new_insts, fb->instruction_list.value, sizeof( Instruction )*pos );
+    if( pos < old_size-1 )
+        memcpy( new_insts, fb->instruction_list.value+pos+1, sizeof( Instruction )*( old_size-pos ) );
+    Instruction* ni = &fb->instruction_list.value[pos];
+    ni->opcode = in->opcode;
+    ni->line_pos = in->line_pos;
+
+    // update local scope
+    for( i = 0; i < fb->local_list.size; i++ ) {
+        Local *l = &fb->local_list.value[i];
+        if( l->start >= pos ) {
+            l->start++;
+            l->end++;
+        }
+        else if( l->start < pos && l->end >= pos )
+            l->end++;
+    }
+
+    // update code block
+    CodeBlock** ppcb = fb->code_block;
+    for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
+        CodeBlock* cb = *ppcb;
+        if( pos >= cb->entry && pos <= cb->exit )
+            cb->exit++;
+        else if( pos < cb->exit ) {
+            cb->entry++;
+            cb->exit++;
+        }
+    }
+}
+
+//--------------------------------------------------
+// optimize functions
+//--------------------------------------------------
+
+int dce_traverse( void* node )
+{
+    CodeBlock* cb = ( CodeBlock* )node;
+    if( cb->reachable )
+        return 0;
+    cb->reachable = 1;
+    return 1;
+}
+
+void* dce_iterator( void* node, void* next )
+{
+    CodeBlock* cb = ( CodeBlock* )node;
+    CodeBlock** succ = cb->successors;
+    if( next ) {
+        int i;
+        for( i = 0; i < cb->num_succ-1; i++, succ++ ) {
+            if( next == *succ )
+                return *( succ+1 );
+        }
+        return 0;
+    }
+    else
+        return cb->num_succ > 0 ? *succ : 0;
+}
+
+void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
+{
+    CodeBlock* cb = fb->code_block[0];
+    dfs( cb, dce_traverse, dce_iterator );
+
+    if( oa->hint ) return;
+
+    int i;
+    int del_cnt = 0;
+
+    CodeBlock** oppcb = fb->code_block;
+    for( i = 0; i < fb->num_code_block; i++, oppcb++ ) {
+        cb = *oppcb;
+        if( !cb->reachable ) {
+            delete_instruction( fb, cb->entry, cb->exit );
+
+            del_cnt++;
+        }
+    }
+
+    if( !del_cnt ) return;
+
+    int new_size = fb->num_code_block - del_cnt;
+    CodeBlock** nppcb = malloc( sizeof( CodeBlock* )*new_size );
+    CodeBlock** ppcb = nppcb;
+    oppcb = fb->code_block;
+    int id = 1;
+    for( i = 0; i < fb->num_code_block; i++, oppcb++ ) {
+        cb = *oppcb;
+        if( cb->reachable ) {
+            cb->id = id++;
+            *nppcb++ = cb;
+        }
+        else
+            free( cb );
+    }
+    free( fb->code_block );
+    fb->code_block = ppcb;
+}
+
+void constant_folding( FunctionBlock* fb, OptArg* oa )
+{
+    if( !oa->associative_law ) return;
+
+    if( oa->hint ) return;
+}
+
+void optimize( FunctionBlock* fb, OptArg* oa )
+{
+    dead_code_elimination( fb, oa );
+
+    // local optimization
+    constant_folding( fb, oa );
+
+    FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
+    int i;
+    for( i = 0; i < fb->num_func; i++ ) {
+        optimize( pfb, oa );
+        pfb++;
+    }
+}

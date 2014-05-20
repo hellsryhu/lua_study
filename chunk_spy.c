@@ -6,6 +6,8 @@ extern InstructionDesc INSTRUCTION_DESC[];
 void output_usage()
 {
     printf( "usage: chunk_spy [options] lc_filename\n" );
+    printf( "\t-a       associative law\n" );
+    printf( "\t-b       show block info\n" );
     printf( "\t-h       show optimize hint\n" );
     printf( "\t-H       show lua header\n" );
     printf( "\t-o name  optimize output to file 'name'\n" );
@@ -24,13 +26,22 @@ int main( int argc, char* argv[] )
 
     OptArg oa;
     memset( &oa, 0, sizeof( OptArg ) );
+    // test
+    oa.associative_law = 1;
 
     int ch;
-    while( ( ch = getopt( argc, argv, "hHo:Oqsv" ) ) != EOF ) {
+    while( ( ch = getopt( argc, argv, "abhHo:Oqsv" ) ) != EOF ) {
         switch( ch ) {
+            case 'a':
+                oa.associative_law = 1;
+                break;
+            case 'b':
+                oa.block = 1;
+                break;
             case 'h':
-                oa.optimize = 1;
+                oa.block = 1;
                 oa.hint = 1;
+                oa.optimize = 1;
                 break;
             case 'H':
                 oa.header = 1;
@@ -77,7 +88,7 @@ int main( int argc, char* argv[] )
     }
 
     FunctionBlock fb;
-    INIT_FUNCTION_BLOCK( &fb );
+    memset( &fb, 0, sizeof( FunctionBlock ) );
     Summary smr;
     memset( &smr, 0, sizeof( Summary ) );
     read_function( f, &fb, 0, &smr );

@@ -146,14 +146,15 @@ code block & flow analyzer
         用于做死代码消除
         需要处理JMP, RETURN等语义
 
-TODO:
 code edit
-    delete
-    insert
-    modify
-    变量作用域
-    跳转的偏移
-    不破坏block？
+    delete, insert, modify( = delete->insert )
+    不破坏block结构
+    更新变量作用域
+    更新跳转的偏移
+    更新常量表
 
-    constant folding & constant propagation
+TODO:
+local optimization
+    constant folding
+    constant propagation
 

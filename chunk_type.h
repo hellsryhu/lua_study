@@ -13,6 +13,8 @@
 
 typedef struct
 {
+    char associative_law;
+    char block;
     char header;
     char hint;
     char optimize;
@@ -205,7 +207,6 @@ typedef struct
     LocalList local_list;
     UpvalueList upvalue_list;
     int level;
-    struct list_head code_block_node;
     int num_code_block;
     CodeBlock** code_block;
 } FunctionBlock;
@@ -219,12 +220,6 @@ typedef struct
 //--------------------------------------------------
 // functions
 //--------------------------------------------------
-
-#define INIT_FUNCTION_BLOCK( pfb ) \
-    { \
-        memset( ( pfb ), 0, sizeof( FunctionBlock ) ); \
-        INIT_LIST_HEAD( &( pfb )->code_block_node ); \
-    }
 
 void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr );
 

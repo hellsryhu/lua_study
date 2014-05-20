@@ -164,7 +164,7 @@ void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr )
     fb->funcs = realloc( fb->funcs, sizeof( FunctionBlock )*fb->num_func );
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
     for( i = 0; i < fb->num_func; i++, pfb++ ) {
-        INIT_FUNCTION_BLOCK( pfb );
+        memset( pfb, 0, sizeof( FunctionBlock ) );
         read_function( f, pfb, lv+1, smr );
     }
     read_linepos( f, &fb->instruction_list );
@@ -417,12 +417,10 @@ void format_function( FunctionBlock* fb, OptArg* oa )
     }
 
     FORMAT_LEVEL( "instruction list:\n" );
-    struct list_head* pos = fb->code_block_node.next;
-    CodeBlock* cb = 0;
-    if( oa->hint && pos != &fb->code_block_node )
-        cb = list_entry( pos, CodeBlock, node );
+    int cb_idx = 0;
     for( i = 0; i < fb->instruction_list.size; i++ ) {
-        if( oa->hint && cb && cb->entry == i ) {
+        CodeBlock* cb = fb->code_block ? fb->code_block[cb_idx] : 0;
+        if( oa->block && cb && cb->entry == i ) {
             FORMAT_LEVEL( "\tblock. %d\n", cb->id );
 
             CodeBlock** ppcb;
@@ -450,11 +448,7 @@ void format_function( FunctionBlock* fb, OptArg* oa )
                 FORMAT_LEVEL( "\t! unreachable, dead code\n" );
             }
 
-            pos = pos->next;
-            if( pos != &fb->code_block_node )
-                cb = list_entry( pos, CodeBlock, node );
-            else
-                cb = 0;
+            cb_idx++;
         }
         Instruction* in = &fb->instruction_list.value[i];
         format_instruction( fb, in, i, oa );
