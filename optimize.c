@@ -332,18 +332,7 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
             // code block
             list_del( del_pos );
 
-            // instructions
-            int size = fb->instruction_list.size-( cb->exit-cb->entry+1 );
-            Instruction* ins = ( Instruction* )malloc( size*sizeof( Instruction ) );
-            int i;
-            Instruction* in = ins;
-            for( i = 0; i < cb->entry; i++, in++ )
-                *in = fb->instruction_list.value[i];
-            for( i = cb->exit+1; i < fb->instruction_list.size; i++, in++ )
-                *in = fb->instruction_list.value[i];
-            fb->instruction_list.size = size;
-            free( fb->instruction_list.value );
-            fb->instruction_list.value = ins;
+            delete_instruction( fb, cb->entry, cb->exit );
         }
         pos = pos->next;
     }
@@ -359,5 +348,115 @@ void optimize( FunctionBlock* fb, OptArg* oa )
         optimize( pfb, oa );
         pfb++;
     }
+}
+
+void delete_instruction( FunctionBlock* fb, int from, int to )
+{
+    if( from < 0 || from >= fb->instruction_list.size ) return;
+    if( to < 0 || to >= fb->instruction_list.size ) return;
+    if( from > to ) return;
+
+    int del_cnt = to-from+1;
+    int old_size = fb->instruction_list.size;
+    // 不能删整个函数，至少要有一个return
+    if( del_cnt == old_size ) return;
+
+    // update jmp
+    int i;
+    for( i = 0; i < fb->instruction_list.size; i++ ) {
+        Instruction* in = &fb->instruction_list.value[i];
+        InstructionDetail ind;
+        get_instruction_detail( in, &ind );
+        switch( ind.op ) {
+            case JMP:
+            case FORLOOP:
+            case FORPREP:
+                { 
+                    int jmp_to = i+ind.sBx+1;
+                    if( i < from ) {
+                        if( jmp_to > to )
+                            jmp_to -= del_cnt;
+                        else if( jmp_to >= from )
+                            jmp_to = from;
+                    }
+                    else if( i > to ) {
+                        if( jmp_to < from )
+                            jmp_to -= del_cnt;
+                        else if( jmp_to <= to )
+                            jmp_to = to+1;
+                    }
+                    ind.sBx = jmp_to-i-1;
+                }
+                make_instruction( in, &ind );
+                break;
+            default:
+                break;
+        }
+    }
+
+    // update instruction list
+    fb->instruction_list.size -= del_cnt;
+    Instruction* new_insts = malloc( sizeof( Instruction )*fb->instruction_list.size );
+    if( from > 0 )
+        memcpy( new_insts, fb->instruction_list.value, sizeof( Instruction )*from );
+    int rem = old_size-to-1;
+    if( rem )
+        memcpy( new_insts+from, fb->instruction_list.value+to+1, sizeof( Instruction )*rem );
+    free( fb->instruction_list.value );
+    fb->instruction_list.value = new_insts;
+
+    // update local scope
+    int unuse_cnt = 0;
+    Local *l;
+    for( i = 0; i < fb->local_list.size; i++ ) {
+        l = &fb->local_list.value[i];
+        if( l->end < from )
+            continue;
+        else if( l->start > to ) {
+            l->start -= del_cnt;
+            l->end -= del_cnt;
+        }
+        else if( l->start < from ) {
+            if( l->end <= to )
+                l->end = from;
+            else
+                l->end -= del_cnt;
+        }
+        else {
+            if( l->end <= to ) {
+                // unused local
+                unuse_cnt++;
+                l->start = l->end = -1;
+            }
+            else {
+                l->start = from;
+                l->end -= del_cnt;
+            }
+        }
+
+        if( l->start > to )
+            l->start -= del_cnt;
+        else if( l->start >= from )
+            l->start = from;
+    }
+    // remove unused locals
+    if( unuse_cnt > 0 ) {
+        fb->local_list.size = fb->local_list.size-unuse_cnt;
+        Local* new_locals = malloc( sizeof( Local )*( fb->local_list.size ) );
+        int next = 0;
+        for( i = 0; i < fb->local_list.size; i++ ) {
+            l = &fb->local_list.value[i];
+            if( l->start != -1 && l->end != -1 ) {
+                Local* nl = &new_locals[next++];
+                memcpy( nl, l, sizeof( Local ) );
+            }
+        }
+        free( fb->local_list.value );
+        fb->local_list.value = new_locals;
+    }
+
+    // TODO
+    // update code block
+    // update constant
 }
 

@@ -147,5 +147,13 @@ code block & flow analyzer
         需要处理JMP, RETURN等语义
 
 TODO:
+code edit
+    delete
+    insert
+    modify
+    变量作用域
+    跳转的偏移
+    不破坏block？
+
     constant folding & constant propagation
 

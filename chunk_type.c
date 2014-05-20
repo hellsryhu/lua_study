@@ -173,6 +173,40 @@ void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr )
     fb->level = lv;
 }
 
+void get_instruction_detail( Instruction* in, InstructionDetail* ind )
+{
+    ind->op = in->opcode & 0x3F;
+    ind->A = ( in->opcode >> 6 ) & 0xFF;
+    ind->desc = &INSTRUCTION_DESC[ind->op];
+    switch( ind->desc->type ) {
+        case iABC:
+            ind->B = in->opcode >> 23;
+            ind->C = ( in->opcode >> 14 ) & 0x1FF;
+            break;
+        case iABx:
+            ind->Bx = in->opcode >> 14;
+            break;
+        case iAsBx:
+            ind->sBx = ( in->opcode >> 14 )-0x1FFFF;
+            break;
+    }
+}
+
+void make_instruction( Instruction* in, InstructionDetail* ind )
+{
+    switch( ind->desc->type ) {
+        case iABC:
+            in->opcode = ind->op | ( ind->A << 6 ) | ( ind->B << 23 ) | ( ind->C << 14 );
+            break;
+        case iABx:
+            in->opcode = ind->op | ( ind->A << 6 ) | ( ind->Bx << 14 );
+            break;
+        case iAsBx:
+            in->opcode = ind->op | ( ind->A << 6 ) | ( ( ind->sBx+0x1FFFF ) << 14 );
+            break;
+    }
+}
+
 //--------------------------------------------------
 // format output functions
 //--------------------------------------------------
@@ -236,58 +270,53 @@ void format_constant( Constant* c, int global )
 void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* oa )
 {
     int tmp_lv;
-    unsigned char op = in->opcode & 0x3F;
-    unsigned char A = ( in->opcode >> 6 ) &0xFF;
-    unsigned short B = in->opcode >> 23;
-    unsigned short C = ( in->opcode >> 14 ) & 0x1FF;
-    unsigned int Bx = in->opcode >> 14;
-    int sBx = ( in->opcode >> 14 )-0x1FFFF;
-    InstructionDesc* id = &INSTRUCTION_DESC[op];
-    FORMAT_LEVEL( "\t%d.\t[%d]\t%s\t", order, in->line_pos, id->name );
-    switch( id->type ) {
+    InstructionDetail ind;
+    get_instruction_detail( in, &ind );
+    FORMAT_LEVEL( "\t%d.\t[%d]\t%s\t", order, in->line_pos, ind.desc->name );
+    switch( ind.desc->type ) {
         case iABC:
-            printf( "%d", A );
-            if( id->param_num >= 2 )
-                printf( " %d", B );
-            if( id->param_num == 3 )
-                printf( " %d", C );
+            printf( "%d", ind.A );
+            if( ind.desc->param_num >= 2 )
+                printf( " %d", ind.B );
+            if( ind.desc->param_num == 3 )
+                printf( " %d", ind.C );
             break;
         case iABx:
-            printf( "%d", A );
-            if( id->param_num >= 2 )
-                printf( " %d", Bx );
+            printf( "%d", ind.A );
+            if( ind.desc->param_num >= 2 )
+                printf( " %d", ind.Bx );
             break;
         case iAsBx:
-            if( id->param_num >= 2 )
-                printf( "%d ", A );
-            printf( "%d", sBx );
+            if( ind.desc->param_num >= 2 )
+                printf( "%d ", ind.A );
+            printf( "%d", ind.sBx );
             break;
         default:
             break;
     }
-    switch( op ) {
+    switch( ind.op ) {
         case LOADK:
             printf( "\t; " );
-            format_constant( &fb->constant_list.value[Bx], 0 );
+            format_constant( &fb->constant_list.value[ind.Bx], 0 );
             break;
         case GETGLOBAL:
         case SETGLOBAL:
             printf( "\t; " );
-            format_constant( &fb->constant_list.value[Bx], 1 );
+            format_constant( &fb->constant_list.value[ind.Bx], 1 );
             break;
         case GETUPVAL:
         case SETUPVAL:
-            printf( "\t; %s", fb->upvalue_list.value[B].value );
+            printf( "\t; %s", fb->upvalue_list.value[ind.B].value );
             break;
         case GETTABLE:
             printf( "\t; " );
-            FORMAT_RK( C );
+            FORMAT_RK( ind.C );
             break;
         case SETTABLE:
             printf( "\t; " );
-            FORMAT_RK( B );
+            FORMAT_RK( ind.B );
             printf( " " );
-            FORMAT_RK( C );
+            FORMAT_RK( ind.C );
             break;
         case ADD:
         case SUB:
@@ -296,27 +325,27 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* 
         case MOD:
         case POW:
             printf( "\t; " );
-            FORMAT_RK( B );
+            FORMAT_RK( ind.B );
             printf( " " );
-            FORMAT_RK( C );
+            FORMAT_RK( ind.C );
             break;
         case JMP:
-            printf( "\t; to %d", order+sBx+1 );
+            printf( "\t; to %d", order+ind.sBx+1 );
             break;
         case SELF:
             printf( "\t; " );
-            FORMAT_RK( C );
+            FORMAT_RK( ind.C );
         case EQ:
         case LT:
         case LE:
             printf( "\t; " );
-            FORMAT_RK( B );
+            FORMAT_RK( ind.B );
             printf( " " );
-            FORMAT_RK( C );
+            FORMAT_RK( ind.C );
             break;
         case FORPREP:
         case FORLOOP:
-            printf( "\t; to %d", order+sBx+1 );
+            printf( "\t; to %d", order+ind.sBx+1 );
             break;
         default:
             break;
@@ -324,23 +353,23 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* 
     if( oa->verbose ) {
         printf( "\t\t\t\t" );
         int p = 0;
-        switch( id->type ) {
+        switch( ind.desc->type ) {
             case iABC:
-                for( p = 0; p < id->param_num; p++ )
+                for( p = 0; p < ind.desc->param_num; p++ )
                     printf( "%s ", sABC[p] );
                 break;
             case iABx:
-                for( p = 0; p < id->param_num; p++ )
+                for( p = 0; p < ind.desc->param_num; p++ )
                     printf( "%s ", sABx[p] );
                 break;
             case iAsBx:
-                for( p = 2-id->param_num; p < id->param_num; p++ )
+                for( p = 2-ind.desc->param_num; p < ind.desc->param_num; p++ )
                     printf( "%s ", sAsBx[p] );
                 break;
             default:
                 break;
         }
-        printf( "\t%s\n", id->desc );
+        printf( "\t%s\n", ind.desc->desc );
     }
     else
         printf( "\n" );
@@ -543,4 +572,3 @@ void write_function( FILE* f, FunctionBlock* fb )
     write_local( f, &fb->local_list );
     write_upvalue( f, &fb->upvalue_list );
 }
-

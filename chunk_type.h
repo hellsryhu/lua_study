@@ -106,6 +106,21 @@ typedef struct
 
 typedef struct
 {
+    unsigned char op;
+    unsigned char A;
+    union {
+        struct {
+            unsigned short B;
+            unsigned short C;
+        };
+        unsigned int Bx;
+        int sBx;
+    };
+    InstructionDesc* desc;
+} InstructionDetail;
+
+typedef struct
+{
     int size;
     Instruction* value;
 } InstructionList;
@@ -212,6 +227,9 @@ typedef struct
     }
 
 void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr );
+
+void get_instruction_detail( Instruction* in, InstructionDetail* ind );
+void make_instruction( Instruction* in, InstructionDetail* ind );
 
 void format_luaheader( LuaHeader* lh );
 void format_function( FunctionBlock* fb, OptArg* fo );
