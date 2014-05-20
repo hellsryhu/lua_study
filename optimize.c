@@ -306,7 +306,7 @@ void delete_instruction( FunctionBlock* fb, int from, int to )
     int i;
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         CodeBlock* cb = *ppcb;
-        if( ( from < cb->entry && to > cb->entry ) || ( from < cb->exit && to > cb->exit ) ) return;
+        if( cb && ( ( from < cb->entry && to > cb->entry ) || ( from < cb->exit && to > cb->exit ) ) ) return;
     }
 
     // update jmp
@@ -406,10 +406,12 @@ void delete_instruction( FunctionBlock* fb, int from, int to )
     ppcb = fb->code_block;
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         CodeBlock* cb = *ppcb;
-        if( cb->exit >= to )
-            cb->exit -= del_cnt;
-        if( cb->entry >= from )
-            cb->entry -= del_cnt;
+        if( cb ) {
+            if( cb->exit >= to )
+                cb->exit -= del_cnt;
+            if( cb->entry >= from )
+                cb->entry -= del_cnt;
+        }
     }
 
     // TODO
@@ -513,44 +515,32 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
 
     if( oa->hint ) return;
 
+    // 只是删除掉，还会留下空位，后续处理时需要注意
     int i;
-    int del_cnt = 0;
-
-    CodeBlock** oppcb = fb->code_block;
-    for( i = 0; i < fb->num_code_block; i++, oppcb++ ) {
-        cb = *oppcb;
+    CodeBlock** ppcb = fb->code_block;
+    for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
+        cb = *ppcb;
         if( !cb->reachable ) {
             delete_instruction( fb, cb->entry, cb->exit );
 
-            del_cnt++;
-        }
-    }
+            *ppcb = 0;
 
-    if( !del_cnt ) return;
-
-    int new_size = fb->num_code_block - del_cnt;
-    CodeBlock** nppcb = malloc( sizeof( CodeBlock* )*new_size );
-    CodeBlock** ppcb = nppcb;
-    oppcb = fb->code_block;
-    int id = 1;
-    for( i = 0; i < fb->num_code_block; i++, oppcb++ ) {
-        cb = *oppcb;
-        if( cb->reachable ) {
-            cb->id = id++;
-            *nppcb++ = cb;
-        }
-        else
             free( cb );
+        }
     }
-    free( fb->code_block );
-    fb->code_block = ppcb;
 }
 
 void constant_folding( FunctionBlock* fb, OptArg* oa )
 {
     if( !oa->associative_law ) return;
 
-    if( oa->hint ) return;
+    CodeBlock** ppcb = fb->code_block;
+    int i;
+    for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
+        CodeBlock* cb = *ppcb;
+        if( cb ) {
+        }
+    }
 }
 
 void optimize( FunctionBlock* fb, OptArg* oa )

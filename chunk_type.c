@@ -419,7 +419,13 @@ void format_function( FunctionBlock* fb, OptArg* oa )
     FORMAT_LEVEL( "instruction list:\n" );
     int cb_idx = 0;
     for( i = 0; i < fb->instruction_list.size; i++ ) {
-        CodeBlock* cb = fb->code_block ? fb->code_block[cb_idx] : 0;
+        CodeBlock* cb = 0;
+        if( fb->code_block ) {
+            cb = fb->code_block[cb_idx];
+            while( !cb ) {
+                cb = fb->code_block[++cb_idx];
+            }
+        }
         if( oa->block && cb && cb->entry == i ) {
             FORMAT_LEVEL( "\tblock. %d\n", cb->id );
 
