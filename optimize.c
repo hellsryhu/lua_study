@@ -290,26 +290,17 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
 // instruction edit
 //--------------------------------------------------
 
-void delete_instruction( FunctionBlock* fb, int from, int to )
+void delete_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to )
 {
-    if( from < 0 || from >= fb->instruction_list.size ) return;
-    if( to < 0 || to >= fb->instruction_list.size ) return;
+    if( from < cb->entry || from > cb->exit ) return;
+    if( to < cb->entry || to > cb->exit ) return;
     if( from > to ) return;
 
     int del_cnt = to-from+1;
     int old_size = fb->instruction_list.size;
-    // 不能删整个函数，至少要有一个return
-    if( del_cnt == old_size ) return;
-
-    // 不能跨code block删
-    CodeBlock** ppcb = fb->code_block;
-    int i;
-    for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
-        CodeBlock* cb = *ppcb;
-        if( cb && ( ( from < cb->entry && to > cb->entry ) || ( from < cb->exit && to > cb->exit ) ) ) return;
-    }
 
     // update jmp
+    int i;
     for( i = 0; i < fb->instruction_list.size; i++ ) {
         Instruction* in = &fb->instruction_list.value[i];
         InstructionDetail ind;
@@ -403,7 +394,7 @@ void delete_instruction( FunctionBlock* fb, int from, int to )
     }
 
     // update code block
-    ppcb = fb->code_block;
+    CodeBlock** ppcb = fb->code_block;
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         CodeBlock* cb = *ppcb;
         if( cb ) {
@@ -418,8 +409,10 @@ void delete_instruction( FunctionBlock* fb, int from, int to )
     // update constant
 }
 
-void insert_instruction( FunctionBlock* fb, int pos, Instruction* in )
+void insert_instruction( FunctionBlock* fb, CodeBlock* cb, int pos, Instruction* in, int size )
 {
+    if( pos < cb->entry || pos > cb->exit ) return;
+
     // update jmp
     int i;
     for( i = 0; i < fb->instruction_list.size; i++ ) {
@@ -433,9 +426,9 @@ void insert_instruction( FunctionBlock* fb, int pos, Instruction* in )
                 {
                     int jmp_to = i+ind.sBx+1;
                     if( i < pos && jmp_to >= pos )
-                        ind.sBx++;
+                        ind.sBx += size;
                     else if( i >= pos && jmp_to < pos )
-                        ind.sBx--;
+                        ind.sBx -= size;
                 }
                 break;
             default:
@@ -445,25 +438,27 @@ void insert_instruction( FunctionBlock* fb, int pos, Instruction* in )
 
     // update instruction list
     int old_size = fb->instruction_list.size;
-    fb->instruction_list.size++;
+    fb->instruction_list.size += size;
     Instruction* new_insts = malloc( sizeof( Instruction )*fb->instruction_list.size );
     if( pos > 0 )
         memcpy( new_insts, fb->instruction_list.value, sizeof( Instruction )*pos );
     if( pos < old_size-1 )
-        memcpy( new_insts, fb->instruction_list.value+pos+1, sizeof( Instruction )*( old_size-pos ) );
+        memcpy( new_insts, fb->instruction_list.value+pos+size, sizeof( Instruction )*( old_size-pos ) );
     Instruction* ni = &fb->instruction_list.value[pos];
-    ni->opcode = in->opcode;
-    ni->line_pos = in->line_pos;
+    for( i = 0; i < size; i++, ni++, in++ ) {
+        ni->opcode = in->opcode;
+        ni->line_pos = in->line_pos;
+    }
 
     // update local scope
     for( i = 0; i < fb->local_list.size; i++ ) {
         Local *l = &fb->local_list.value[i];
         if( l->start >= pos ) {
-            l->start++;
-            l->end++;
+            l->start += size;
+            l->end += size;
         }
         else if( l->start < pos && l->end >= pos )
-            l->end++;
+            l->end += size;
     }
 
     // update code block
@@ -472,10 +467,10 @@ void insert_instruction( FunctionBlock* fb, int pos, Instruction* in )
         CodeBlock* cb = *ppcb;
         if( cb ) {
             if( pos >= cb->entry && pos <= cb->exit )
-                cb->exit++;
+                cb->exit += size;
             else if( pos < cb->exit ) {
-                cb->entry++;
-                cb->exit++;
+                cb->entry += size;
+                cb->exit += size;
             }
         }
     }
@@ -523,7 +518,7 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         cb = *ppcb;
         if( !cb->reachable ) {
-            delete_instruction( fb, cb->entry, cb->exit );
+            delete_instruction( fb, cb, cb->entry, cb->exit );
 
             *ppcb = 0;
 
@@ -543,36 +538,33 @@ void constant_folding( FunctionBlock* fb, OptArg* oa )
         if( cb ) {
             int j;
             Instruction* in = &fb->instruction_list.value[cb->entry];
-            Instruction* prev_in = 0;
-            InstructionDetail prev, curr;
+            InstructionDetail prev;
+            char prev_flag = 0;
             for( j = cb->entry; j <= cb->exit; j++, in++ ) {
-                char optimizable = 0;
+                InstructionDetail curr;
                 get_instruction_detail( in, &curr );
-                if( curr.op == ADD || curr.op == MUL ) {
-                    // associative law
-                    // K+R = R+K
-                    // K+K is already optimized by luac
-                    // R+R is not optimizable
-                    if( IS_CONST( curr.B ) && !IS_CONST( curr.C ) ) {
-                        unsigned short tmp = curr.C;
-                        curr.C = curr.B;
-                        curr.B = tmp;
-                    }
-                    if( !IS_CONST( curr.B ) && IS_CONST( curr.C ) ) {
-                        optimizable = 1;
 
-                        if( prev_in && prev.op == curr.op && prev.A == curr.A && curr.A == curr.B ) {
-                            in->hint |= HINT_CONSTANT_FOLDING;
-                        }
-                        prev_in = in;
-                        prev = curr;
+                char flag = 0;
+                if( curr.op == ADD || curr.op == SUB )
+                    flag = ARITH_OP | ADD_OP;
+                else if( curr.op == MUL || curr.op == DIV ) {
+                    flag = ARITH_OP;
+                }
+
+                char optimizable = 0;
+                if( ( flag & ARITH_OP ) && ( IS_CONST( curr.B ) || IS_CONST( curr.C ) ) ) {
+                    optimizable = 1;
+
+                    if( prev_flag == flag ) {
+                        in->hint |= HINT_CONSTANT_FOLDING;
                     }
 
-                    // K-R = -R+K
+                    prev = curr;
+                    prev_flag = flag;
                 }
 
                 if( !optimizable )
-                    prev_in = 0;
+                    prev_flag = 0;
             }
         }
     }

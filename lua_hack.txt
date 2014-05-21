@@ -154,6 +154,8 @@ code edit
     更新常量表
 
 TODO:
+显示
+    可读性比较好的字节码显示
 local optimization
     constant folding
     constant propagation

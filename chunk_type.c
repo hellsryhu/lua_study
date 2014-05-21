@@ -40,8 +40,8 @@ InstructionDesc INSTRUCTION_DESC[] = {
     { "CALL     ", iABC, 3, "R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))" },
     { "TAILCALL ", iABC, 3, "return R(A)(R(A+1), ... ,R(A+B-1))" },
     { "RETURN   ", iABC, 2, "return R(A), ... ,R(A+B-2)" },
-    { "FORLOOP  ", iAsBx, 2, "R(A) -= R(A+2); PC += sBx" },
-    { "FORPREP  ", iAsBx, 2, "R(A) += R(A+2);if R(A) <?= R(A+1) then { PC += sBx; R(A+3) = R(A) }" },
+    { "FORLOOP  ", iAsBx, 2, "R(A) += R(A+2);if R(A) <?= R(A+1) then { PC += sBx; R(A+3) = R(A) }" },
+    { "FORPREP  ", iAsBx, 2, "R(A) -= R(A+2); PC += sBx" },
     { "TFORLOOP ", iABC, 3, "R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2)); if R(A+3) ~= nil then { R(A+2) = R(A+3); } else { PC++; }" },
     { "SETLIST  ", iABC, 3, "R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B" },
     { "CLOSE    ", iABC, 1, "close all variables in the stack up to (>=) R(A)" },
@@ -234,23 +234,33 @@ void format_luaheader( LuaHeader* lh )
         printf( "\t" ); \
     printf
 
+#define FORMAT_REGISTER( R ) \
+    printf( "r(%d)", R );
+
 #define FORMAT_RK( RK ) \
     if( IS_CONST( RK ) ) \
-        format_constant( &fb->constant_list.value[RK-CONST_BASE], 0 ); \
+        format_constant( &fb->constant_list.value[RK-CONST_BASE] ); \
+    else { \
+        FORMAT_REGISTER( RK ) \
+    }
+
+#define FORMAT_BOOL( B ) \
+    if( B ) \
+        printf( "true" ); \
     else \
-        printf( "-" );
+        printf( "false" );
+
+#define FORMAT_UPVALUE( UV ) \
+    printf( "%s", fb->upvalue_list.value[UV].value );
     
-void format_constant( Constant* c, int global )
+void format_constant( Constant* c )
 {
     switch( c->type ) {
         case LUA_TNIL:
             printf( "nil" );
             break;
         case LUA_TBOOLEAN:
-            if( c->boolean )
-                printf( "true" );
-            else
-                printf( "false" );
+            FORMAT_BOOL( c->boolean );
             break;
         case LUA_TNUMBER:
             {
@@ -262,10 +272,7 @@ void format_constant( Constant* c, int global )
             }
             break;
         case LUA_TSTRING:
-            if( global )
-                printf( "%s", c->string.value );
-            else
-                printf( "\"%s\"", c->string.value );
+            printf( "\"%s\"", c->string.value );
             break;
         default:
             break;
@@ -308,58 +315,359 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* 
         default:
             break;
     }
+    printf( "\t\t; " );
     switch( ind.op ) {
-        case LOADK:
-            printf( "\t; " );
-            format_constant( &fb->constant_list.value[ind.Bx], 0 );
+        case MOVE:
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_REGISTER( ind.B );
             break;
-        case GETGLOBAL:
-        case SETGLOBAL:
-            printf( "\t; " );
-            format_constant( &fb->constant_list.value[ind.Bx], 1 );
+        case LOADK:
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            format_constant( &fb->constant_list.value[ind.Bx] );
+            break;
+        case LOADBOOL:
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_BOOL( ind.B );
+            if( ind.C )
+                printf( "; goto %d", order+2 );
+            break;
+        case LOADNIL:
+            {
+                int r;
+                for( r = ind.A; r <= ind.B; r++ ) {
+                    FORMAT_REGISTER( r );
+                    printf( " = nil" );
+                    if( r < ind.B )
+                        printf( "; " );
+                }
+            }
             break;
         case GETUPVAL:
-        case SETUPVAL:
-            printf( "\t; %s", fb->upvalue_list.value[ind.B].value );
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_UPVALUE( ind.B );
+            break;
+        case GETGLOBAL:
+            FORMAT_REGISTER( ind.A );
+            printf( " = _G[" );
+            format_constant( &fb->constant_list.value[ind.Bx] );
+            printf( "]" );
             break;
         case GETTABLE:
-            printf( "\t; " );
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_REGISTER( ind.B );
+            printf( "[" );
             FORMAT_RK( ind.C );
+            printf( "]" );
+            break;
+        case SETGLOBAL:
+            printf( "_G[" );
+            format_constant( &fb->constant_list.value[ind.Bx] );
+            printf( "] = " );
+            FORMAT_REGISTER( ind.A );
+            break;
+        case SETUPVAL:
+            FORMAT_UPVALUE( ind.B );
+            printf( " = " );
+            FORMAT_REGISTER( ind.A );
             break;
         case SETTABLE:
-            printf( "\t; " );
+            FORMAT_REGISTER( ind.A );
+            printf( "[" );
             FORMAT_RK( ind.B );
-            printf( " " );
+            printf( "] = " );
             FORMAT_RK( ind.C );
             break;
-        case ADD:
-        case SUB:
-        case MUL:
-        case DIV:
-        case MOD:
-        case POW:
-            printf( "\t; " );
-            FORMAT_RK( ind.B );
-            printf( " " );
-            FORMAT_RK( ind.C );
-            break;
-        case JMP:
-            printf( "\t; to %d", order+ind.sBx+1 );
+        case NEWTABLE:
+            FORMAT_REGISTER( ind.A );
+            printf( " = {}" );
+            if( ind.B > 0 )
+                printf( "; array = %d", ind.B );
+            if( ind.C > 0 )
+                printf( "; hash = %d", ind.C );
             break;
         case SELF:
-            printf( "\t; " );
+            FORMAT_REGISTER( ind.A+1 );
+            printf( " = " );
+            FORMAT_REGISTER( ind.B );
+            printf( "; " );
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_REGISTER( ind.B );
+            printf( "[" );
             FORMAT_RK( ind.C );
-        case EQ:
-        case LT:
-        case LE:
-            printf( "\t; " );
+            printf( "]" );
+            break;
+        case ADD:
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
             FORMAT_RK( ind.B );
-            printf( " " );
+            printf( "+" );
             FORMAT_RK( ind.C );
             break;
-        case FORPREP:
+        case SUB:
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_RK( ind.B );
+            printf( "-" );
+            FORMAT_RK( ind.C );
+            break;
+        case MUL:
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_RK( ind.B );
+            printf( "*" );
+            FORMAT_RK( ind.C );
+            break;
+        case DIV:
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_RK( ind.B );
+            printf( "/" );
+            FORMAT_RK( ind.C );
+            break;
+        case MOD:
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_RK( ind.B );
+            printf( "%%" );
+            FORMAT_RK( ind.C );
+            break;
+        case POW:
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_RK( ind.B );
+            printf( "^" );
+            FORMAT_RK( ind.C );
+            break;
+        case UNM:
+            FORMAT_REGISTER( ind.A );
+            printf( " = -" );
+            FORMAT_REGISTER( ind.B );
+            break;
+        case NOT:
+            FORMAT_REGISTER( ind.A );
+            printf( " = not " );
+            FORMAT_REGISTER( ind.B );
+            break;
+        case LEN:
+            FORMAT_REGISTER( ind.A );
+            printf( " = len(" );
+            FORMAT_REGISTER( ind.B );
+            break;
+        case CONCAT:
+            {
+                FORMAT_REGISTER( ind.A );
+                printf( " = " );
+                int r;
+                for( r = ind.B; r <= ind.C; r++ ) {
+                    FORMAT_REGISTER( r );
+                    if( r < ind.C )
+                        printf( ".." );
+                }
+            }
+            break;
+        case JMP:
+            printf( "goto %d", order+ind.sBx+1 );
+            break;
+        case EQ:
+            printf( "if " );
+            FORMAT_RK( ind.B );
+            if( ind.A )
+                printf( " ~= " );
+            else
+                printf( " == " );
+            FORMAT_RK( ind.C );
+            printf( " then goto %d", order+2 );
+            break;
+        case LT:
+            printf( "if " );
+            FORMAT_RK( ind.B );
+            if( ind.A )
+                printf( " >= " );
+            else
+                printf( " < " );
+            FORMAT_RK( ind.C );
+            printf( " then goto %d", order+2 );
+            break;
+        case LE:
+            printf( "if " );
+            FORMAT_RK( ind.B );
+            if( ind.A )
+                printf( " > " );
+            else
+                printf( " < " );
+            FORMAT_RK( ind.C );
+            printf( " then goto %d", order+2 );
+            break;
+        case TEST:
+            printf( "if " );
+            if( ind.C )
+                printf( " not " );
+            FORMAT_REGISTER( ind.A );
+            printf( " then goto %d", order+2 );
+            break;
+        case TESTSET:
+            printf( "if " );
+            if( !ind.C )
+                printf( " not " );
+            FORMAT_REGISTER( ind.B );
+            printf( " then " );
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            FORMAT_REGISTER( ind.B );
+            printf( " else goto %d", order+2 );
+            break;
+        case CALL:
+            {
+                int r;
+                if( ind.C == 0 ) {
+                    FORMAT_REGISTER( ind.A );
+                    printf( " ... = " );
+                }
+                else if( ind.C > 1 ) {
+                    for( r = ind.A; r <= ind.A+ind.C-2; r++ ) {
+                        FORMAT_REGISTER( r );
+                        if( r < ind.A+ind.C-2 )
+                            printf( ", " );
+                    }
+                    printf( " = " );
+                }
+                FORMAT_REGISTER( ind.A );
+                printf( "(" );
+                if( ind.B == 0 ) {
+                    printf( " " );
+                    FORMAT_REGISTER( ind.A+1 );
+                    printf( " ... " );
+                }
+                else if( ind.B > 1 ) {
+                    printf( " " );
+                    for( r = ind.A+1; r <= ind.A+ind.B-1; r++ ) {
+                        FORMAT_REGISTER( r );
+                        if( r < ind.A+ind.B-1 )
+                            printf( ", " );
+                    }
+                    printf( " " );
+                }
+                printf( ")" );
+            }
+            break;
+        case TAILCALL:
+            printf( "return " );
+            {
+                int r;
+                FORMAT_REGISTER( ind.A );
+                printf( "(" );
+                if( ind.B == 0 ) {
+                    printf( " " );
+                    FORMAT_REGISTER( ind.A+1 );
+                    printf( " ... " );
+                }
+                else if( ind.B > 1 ) {
+                    printf( " " );
+                    for( r = ind.A+1; r <= ind.A+ind.B-1; r++ ) {
+                        FORMAT_REGISTER( r );
+                        if( r < ind.A+ind.B-1 )
+                            printf( ", " );
+                    }
+                    printf( " " );
+                }
+                printf( ")" );
+            }
+            break;
+        case RETURN:
+            printf( "return " );
+            {
+                int r;
+                if( ind.B == 0 ) {
+                    FORMAT_REGISTER( ind.A );
+                    printf( " ..." );
+                }
+                else if( ind.B > 1 ) {
+                    for( r = ind.A; r <= ind.A+ind.B-2; r++ ) {
+                        FORMAT_REGISTER( r );
+                        if( r < ind.A+ind.B-2 )
+                            printf( ", " );
+                    }
+                }
+            }
+            break;
         case FORLOOP:
-            printf( "\t; to %d", order+ind.sBx+1 );
+            FORMAT_REGISTER( ind.A );
+            printf( " += " );
+            FORMAT_REGISTER( ind.A+2 );
+            printf( "; if " );
+            FORMAT_REGISTER( ind.A );
+            printf( " <= " );
+            FORMAT_REGISTER( ind.A+1 );
+            printf( " then " );
+            FORMAT_REGISTER( ind.A+3 );
+            printf( " = " );
+            FORMAT_REGISTER( ind.A );
+            printf( "; goto %d", order+ind.sBx+1 );
+            break;
+        case FORPREP:
+            FORMAT_REGISTER( ind.A );
+            printf( " -= " );
+            FORMAT_REGISTER( ind.A+2 );
+            printf( "; goto %d", order+ind.sBx+1 );
+            break;
+        case TFORLOOP:
+            {
+                int r;
+                for( r = ind.A; r <= ind.A+ind.C+2; r++ ) {
+                    FORMAT_REGISTER( r );
+                    if( r < ind.A+ind.C+2 )
+                        printf( ", " );
+                }
+                printf( " = " );
+                FORMAT_REGISTER( ind.A );
+                printf( "( " );
+                FORMAT_REGISTER( ind.A+1 );
+                printf( ", " );
+                FORMAT_REGISTER( ind.A+2 );
+                printf( " ); if " );
+                FORMAT_REGISTER( ind.A+3 );
+                printf( " then " );
+                FORMAT_REGISTER( ind.A+2 );
+                printf( " = " );
+                FORMAT_REGISTER( ind.A+3 );
+                printf( " else goto %d", order+2 );
+            }
+            break;
+        case SETLIST:
+            FORMAT_REGISTER( ind.A );
+            printf( "[( %d )*FPF+i] = r(%d+i), 1 <= i <= %d", ind.C-1, ind.A, ind.B );
+            break;
+        case CLOSE:
+            printf( "pop all above " );
+            FORMAT_REGISTER( ind.A );
+            break;
+        case CLOSURE:
+            FORMAT_REGISTER( ind.A );
+            printf( " = " );
+            printf( "closure( KPROTO[%d] )", ind.Bx );
+            break;
+        case VARARG:
+            {
+                int r;
+                if( ind.B == 0 ) {
+                    FORMAT_REGISTER( ind.A );
+                    printf( " ... = ..." );
+                }
+                else {
+                    for( r = ind.A; r <= ind.A+ind.B-2; r++ ) {
+                        FORMAT_REGISTER( r );
+                        if( r < ind.A+ind.B-2 )
+                            printf( ", " );
+                    }
+                    printf( " = ..." );
+                }
+            } 
             break;
         default:
             break;
@@ -409,7 +717,7 @@ void format_function( FunctionBlock* fb, OptArg* oa )
         for( i = 0; i < fb->constant_list.size; i++ ) {
             FORMAT_LEVEL( "\t%d.\t", i );
             Constant* c = &fb->constant_list.value[i];
-            format_constant( c, 0 );
+            format_constant( c );
             printf( "\n" );
         }
     }
@@ -418,7 +726,7 @@ void format_function( FunctionBlock* fb, OptArg* oa )
         FORMAT_LEVEL( "local list:\n" );
         for( i = 0; i < fb->local_list.size; i++ ) {
             Local* l = &fb->local_list.value[i];
-            FORMAT_LEVEL( "\t%d.\t%s\t(%d,%d)\n", i, l->name.value, l->start, l->end );
+            FORMAT_LEVEL( "\t%d.\t%s\t(%d,%d)\n", i, l->name.value, l->start-1, l->end-1 );
         }
     }
 
