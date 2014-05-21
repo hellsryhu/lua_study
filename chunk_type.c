@@ -49,6 +49,10 @@ InstructionDesc INSTRUCTION_DESC[] = {
     { "VARARG   ", iABC, 2, "R(A), R(A+1), ..., R(A+B-1) = vararg" },
 };
 
+const char* OPTIMIZATION_HINT[] = {
+    "constant folding",
+};
+
 //--------------------------------------------------
 // read functions
 //--------------------------------------------------
@@ -70,6 +74,7 @@ void read_instruction( FILE* f, InstructionList* il )
     for( i = 0; i < il->size; i++ ) {
         il->value[i].opcode = opcodes[i];
         il->value[i].line_pos = 0;
+        il->value[i].hint = 0;
     }
     free( opcodes );
 }
@@ -230,8 +235,8 @@ void format_luaheader( LuaHeader* lh )
     printf
 
 #define FORMAT_RK( RK ) \
-    if( RK >= 0x100 ) \
-        format_constant( &fb->constant_list.value[RK-0x100], 0 ); \
+    if( IS_CONST( RK ) ) \
+        format_constant( &fb->constant_list.value[RK-CONST_BASE], 0 ); \
     else \
         printf( "-" );
     
@@ -270,6 +275,15 @@ void format_constant( Constant* c, int global )
 void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* oa )
 {
     int tmp_lv;
+    if( oa->hint ) {
+        int i;
+        for( i = 0; i < 32; i++ ) {
+            int mask = 1 << i;
+            if( in->hint & mask ) {
+                FORMAT_LEVEL( "\t! %s\n", OPTIMIZATION_HINT[i] );
+            }
+        }
+    }
     InstructionDetail ind;
     get_instruction_detail( in, &ind );
     FORMAT_LEVEL( "\t%d.\t[%d]\t%s\t", order, in->line_pos, ind.desc->name );
@@ -420,9 +434,9 @@ void format_function( FunctionBlock* fb, OptArg* oa )
     int cb_idx = 0;
     for( i = 0; i < fb->instruction_list.size; i++ ) {
         CodeBlock* cb = 0;
-        if( fb->code_block ) {
+        if( fb->code_block && cb_idx < fb->num_code_block ) {
             cb = fb->code_block[cb_idx];
-            while( !cb ) {
+            while( !cb && cb_idx < fb->num_code_block-1 ) {
                 cb = fb->code_block[++cb_idx];
             }
         }

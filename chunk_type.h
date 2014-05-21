@@ -92,6 +92,9 @@ enum INSTRUCTION_TYPE
     iAsBx = 2,
 };
 
+#define CONST_BASE 0x100
+#define IS_CONST( RK ) ( RK >= CONST_BASE )
+
 typedef struct
 {
     const char* name;
@@ -104,6 +107,7 @@ typedef struct
 {
     unsigned int opcode;
     int line_pos;
+    int hint;
 } Instruction;
 
 typedef struct

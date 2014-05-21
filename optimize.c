@@ -470,11 +470,13 @@ void insert_instruction( FunctionBlock* fb, int pos, Instruction* in )
     CodeBlock** ppcb = fb->code_block;
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         CodeBlock* cb = *ppcb;
-        if( pos >= cb->entry && pos <= cb->exit )
-            cb->exit++;
-        else if( pos < cb->exit ) {
-            cb->entry++;
-            cb->exit++;
+        if( cb ) {
+            if( pos >= cb->entry && pos <= cb->exit )
+                cb->exit++;
+            else if( pos < cb->exit ) {
+                cb->entry++;
+                cb->exit++;
+            }
         }
     }
 }
@@ -515,7 +517,7 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
 
     if( oa->hint ) return;
 
-    // 只是删除掉，还会留下空位，后续处理时需要注意
+    // beware!!! only set a null pos
     int i;
     CodeBlock** ppcb = fb->code_block;
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
@@ -539,12 +541,46 @@ void constant_folding( FunctionBlock* fb, OptArg* oa )
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         CodeBlock* cb = *ppcb;
         if( cb ) {
+            int j;
+            Instruction* in = &fb->instruction_list.value[cb->entry];
+            Instruction* prev_in = 0;
+            InstructionDetail prev, curr;
+            for( j = cb->entry; j <= cb->exit; j++, in++ ) {
+                char optimizable = 0;
+                get_instruction_detail( in, &curr );
+                if( curr.op == ADD || curr.op == MUL ) {
+                    // associative law
+                    // K+R = R+K
+                    // K+K is already optimized by luac
+                    // R+R is not optimizable
+                    if( IS_CONST( curr.B ) && !IS_CONST( curr.C ) ) {
+                        unsigned short tmp = curr.C;
+                        curr.C = curr.B;
+                        curr.B = tmp;
+                    }
+                    if( !IS_CONST( curr.B ) && IS_CONST( curr.C ) ) {
+                        optimizable = 1;
+
+                        if( prev_in && prev.op == curr.op && prev.A == curr.A && curr.A == curr.B ) {
+                            in->hint |= HINT_CONSTANT_FOLDING;
+                        }
+                        prev_in = in;
+                        prev = curr;
+                    }
+
+                    // K-R = -R+K
+                }
+
+                if( !optimizable )
+                    prev_in = 0;
+            }
         }
     }
 }
 
 void optimize( FunctionBlock* fb, OptArg* oa )
 {
+    // general optimization
     dead_code_elimination( fb, oa );
 
     // local optimization
