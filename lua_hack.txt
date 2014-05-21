@@ -153,9 +153,12 @@ code edit
     更新跳转的偏移
     更新常量表
 
-TODO:
 显示
     可读性比较好的字节码显示
+    能够直接打印局部变量
+
+TODO:
+
 local optimization
     constant folding
     constant propagation

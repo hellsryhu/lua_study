@@ -195,6 +195,11 @@ typedef struct
     int to;
 } Jump;
 
+typedef struct {
+    int* slots;
+    int max_local;
+} StackFrame;
+
 typedef struct
 {
     String source_name;
@@ -213,6 +218,7 @@ typedef struct
     int level;
     int num_code_block;
     CodeBlock** code_block;
+    StackFrame* stack_frames;
 } FunctionBlock;
 
 typedef struct

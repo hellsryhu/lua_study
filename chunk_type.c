@@ -176,6 +176,34 @@ void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr )
     read_local( f, &fb->local_list );
     read_upvalue( f, &fb->upvalue_list );
     fb->level = lv;
+
+    // gen stack frames
+    fb->stack_frames = malloc( fb->instruction_list.size*sizeof( StackFrame ) );
+    memset( fb->stack_frames, 0, fb->instruction_list.size*sizeof( StackFrame ) );
+    StackFrame* pframe;
+    for( i = 0, pframe = fb->stack_frames; i < fb->instruction_list.size; i++, pframe++ ) {
+        pframe->slots = malloc( fb->max_stack_size*sizeof( int ) );
+        memset( pframe->slots, -1, fb->max_stack_size*sizeof( int ) );
+    }
+    Local* l;
+    for( i = 0, l = fb->local_list.value; i < fb->local_list.size; i++, l++ ) {
+        int j;
+        int start = l->start-1;
+        start = start < 0 ? 0 : start;
+        for( j = l->start, pframe = &fb->stack_frames[start]; j <= l->end; j++, pframe++ )
+            pframe->slots[pframe->max_local++] = i;
+    }
+    // print frames
+    for( i = 0, pframe = fb->stack_frames; i < fb->instruction_list.size; i++, pframe++ ) {
+        printf( "frame: %d slots: ", i );
+        int j;
+        for( j = 0; j < fb->max_stack_size; j++ ) {
+            printf( "%3d", pframe->slots[j] );
+            if( j < fb->max_stack_size-1 )
+                printf( ", " );
+        }
+        printf( "\n" );
+    }
 }
 
 void get_instruction_detail( Instruction* in, InstructionDetail* ind )
@@ -235,7 +263,17 @@ void format_luaheader( LuaHeader* lh )
     printf
 
 #define FORMAT_REGISTER( R ) \
-    printf( "r(%d)", R );
+    { \
+        if( fb->stack_frames ) { \
+            int slot = fb->stack_frames[order].slots[R]; \
+            if( slot != -1 ) \
+                printf( "%s", fb->local_list.value[slot].name.value ); \
+            else \
+                printf( "r(%d)", R ); \
+        } \
+        else \
+            printf( "r(%d)", R ); \
+    }
 
 #define FORMAT_RK( RK ) \
     if( IS_CONST( RK ) ) \

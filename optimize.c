@@ -527,6 +527,13 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
     }
 }
 
+#define OPT_CF_CHECK_FROM \
+    if( opt_from ) { \
+        opt_to = j-1; \
+        printf( "%d %d\n", opt_from, opt_to ); \
+        opt_from = 0; \
+    }
+
 void constant_folding( FunctionBlock* fb, OptArg* oa )
 {
     if( !oa->associative_law ) return;
@@ -536,10 +543,11 @@ void constant_folding( FunctionBlock* fb, OptArg* oa )
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         CodeBlock* cb = *ppcb;
         if( cb ) {
-            int j;
             Instruction* in = &fb->instruction_list.value[cb->entry];
             InstructionDetail prev;
             char prev_flag = 0;
+            int opt_from = 0, opt_to = 0;
+            int j;
             for( j = cb->entry; j <= cb->exit; j++, in++ ) {
                 InstructionDetail curr;
                 get_instruction_detail( in, &curr );
@@ -551,21 +559,33 @@ void constant_folding( FunctionBlock* fb, OptArg* oa )
                     flag = ARITH_OP;
                 }
 
-                char optimizable = 0;
-                if( ( flag & ARITH_OP ) && ( IS_CONST( curr.B ) || IS_CONST( curr.C ) ) ) {
-                    optimizable = 1;
-
-                    if( prev_flag == flag ) {
-                        in->hint |= HINT_CONSTANT_FOLDING;
+                if( flag && ( IS_CONST( curr.B ) || IS_CONST( curr.C ) ) ) {
+                    if( curr.A == prev.A && prev_flag == flag ) {
+                        // opt
+                        if( oa->hint )
+                            in->hint |= HINT_CONSTANT_FOLDING;
+                        else {
+                            // merge op
+                        }
                     }
+                    else {
+                        OPT_CF_CHECK_FROM;
+                    }
+
+                    if( !opt_from )
+                        opt_from = j;
 
                     prev = curr;
                     prev_flag = flag;
                 }
 
-                if( !optimizable )
+                if( !flag ) {
                     prev_flag = 0;
+
+                    OPT_CF_CHECK_FROM;
+                }
             }
+            OPT_CF_CHECK_FROM;
         }
     }
 }
@@ -578,10 +598,8 @@ void optimize( FunctionBlock* fb, OptArg* oa )
     // local optimization
     constant_folding( fb, oa );
 
+    int i = 0;
     FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
-    int i;
-    for( i = 0; i < fb->num_func; i++ ) {
+    for( ; i < fb->num_func; i++, pfb++ )
         optimize( pfb, oa );
-        pfb++;
-    }
 }
