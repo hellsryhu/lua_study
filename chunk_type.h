@@ -122,6 +122,7 @@ typedef struct
         unsigned int Bx;
         int sBx;
     };
+    int line_pos;
     InstructionDesc* desc;
 } InstructionDetail;
 
@@ -231,7 +232,11 @@ typedef struct
 // functions
 //--------------------------------------------------
 
+int is_same_string( String* s1, String* s2 );
+
 void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr );
+
+void reset_stack_frames( FunctionBlock* fb );
 
 void get_instruction_detail( Instruction* in, InstructionDetail* ind );
 void make_instruction( Instruction* in, InstructionDetail* ind );

@@ -1,3 +1,4 @@
+#include <string.h>
 #include "chunk_type.h"
 
 //--------------------------------------------------
@@ -52,6 +53,17 @@ InstructionDesc INSTRUCTION_DESC[] = {
 const char* OPTIMIZATION_HINT[] = {
     "constant folding",
 };
+
+//--------------------------------------------------
+// util functions
+//--------------------------------------------------
+
+int is_same_string( String* s1, String* s2 )
+{
+    if( s1->size != s2->size )
+        return 0;
+    return memcmp( s1, s2, s1->size ) == 0;
+}
 
 //--------------------------------------------------
 // read functions
@@ -176,11 +188,21 @@ void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr )
     read_local( f, &fb->local_list );
     read_upvalue( f, &fb->upvalue_list );
     fb->level = lv;
+}
+
+void reset_stack_frames( FunctionBlock* fb )
+{
+    int i;
+    StackFrame* pframe;
+    if( fb->stack_frames ) {
+        for( i = 0, pframe = fb->stack_frames; i < fb->instruction_list.size; i++, pframe++ )
+            free( pframe->slots );
+        free( fb->stack_frames );
+    }
 
     // gen stack frames
     fb->stack_frames = malloc( fb->instruction_list.size*sizeof( StackFrame ) );
     memset( fb->stack_frames, 0, fb->instruction_list.size*sizeof( StackFrame ) );
-    StackFrame* pframe;
     for( i = 0, pframe = fb->stack_frames; i < fb->instruction_list.size; i++, pframe++ ) {
         pframe->slots = malloc( fb->max_stack_size*sizeof( int ) );
         memset( pframe->slots, -1, fb->max_stack_size*sizeof( int ) );
@@ -192,17 +214,6 @@ void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr )
         start = start < 0 ? 0 : start;
         for( j = l->start, pframe = &fb->stack_frames[start]; j <= l->end; j++, pframe++ )
             pframe->slots[pframe->max_local++] = i;
-    }
-    // print frames
-    for( i = 0, pframe = fb->stack_frames; i < fb->instruction_list.size; i++, pframe++ ) {
-        printf( "frame: %d slots: ", i );
-        int j;
-        for( j = 0; j < fb->max_stack_size; j++ ) {
-            printf( "%3d", pframe->slots[j] );
-            if( j < fb->max_stack_size-1 )
-                printf( ", " );
-        }
-        printf( "\n" );
     }
 }
 
@@ -223,6 +234,7 @@ void get_instruction_detail( Instruction* in, InstructionDetail* ind )
             ind->sBx = ( in->opcode >> 14 )-0x1FFFF;
             break;
     }
+    ind->line_pos = in->line_pos;
 }
 
 void make_instruction( Instruction* in, InstructionDetail* ind )
@@ -238,6 +250,7 @@ void make_instruction( Instruction* in, InstructionDetail* ind )
             in->opcode = ind->op | ( ind->A << 6 ) | ( ( ind->sBx+0x1FFFF ) << 14 );
             break;
     }
+    in->line_pos = ind->line_pos;
 }
 
 //--------------------------------------------------
@@ -737,6 +750,8 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* 
 
 void format_function( FunctionBlock* fb, OptArg* oa )
 {
+    reset_stack_frames( fb );
+
     int i;
     int tmp_lv;
     if( fb->source_name.size > 0 ) {

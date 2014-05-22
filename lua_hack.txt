@@ -146,20 +146,33 @@ code block & flow analyzer
         用于做死代码消除
         需要处理JMP, RETURN等语义
 
-code edit
-    delete, insert, modify( = delete->insert )
-    不破坏block结构
-    更新变量作用域
-    更新跳转的偏移
-    更新常量表
-
 显示
     可读性比较好的字节码显示
     能够直接打印局部变量
+        注意，函数参数的作用域是从第0条字节码开始的，而不是第i1条
+    format开始时生成整个函数的栈帧，这里的栈帧主要是用来区分local变量和临时变量
 
+code edit
+    delete, insert
+    不破坏block结构
 TODO:
+    还有问题，需要各种调试
+    实现modify(和先delete再insert不同，只处理一次)
+    更新变量作用域
+    更新跳转的偏移
+        因为跳转会产生code block，所以在block中增删代码理论上不会破坏跳转的结构，只会改变地址
+    保证每次修改后函数都是完整的(可以format)
+    常量表在最后统一更新一次，清理掉未使用的
 
 local optimization
     constant folding
+        需要保证所有重定义算术运算元方法满足结合律，即
+        V+K = K+V
+        这样才能让形如
+        K1+V+K2
+        的代码优化为
+        K1+K2+V
+        所以提供一个-a的选项来决定是否要打开constant folding优化
+写完constant folding之后重构一次代码
     constant propagation
 

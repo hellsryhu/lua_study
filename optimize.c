@@ -290,21 +290,24 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
 // instruction edit
 //--------------------------------------------------
 
-void delete_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to )
+// delete from~to, insert into from
+void modify_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to, Instruction* in, int size )
 {
     if( from < cb->entry || from > cb->exit ) return;
     if( to < cb->entry || to > cb->exit ) return;
-    if( from > to ) return;
 
-    int del_cnt = to-from+1;
-    int old_size = fb->instruction_list.size;
+    int mod_cnt = size;
+    if( to >= from )
+        mod_cnt += from-to-1;
 
     // update jmp
     int i;
-    for( i = 0; i < fb->instruction_list.size; i++ ) {
-        Instruction* in = &fb->instruction_list.value[i];
+    Instruction *tmp_in;
+    for( i = 0, tmp_in = fb->instruction_list.value; i < fb->instruction_list.size; i++, tmp_in++ ) {
+        if( i >= from && i <= to ) continue;
+
         InstructionDetail ind;
-        get_instruction_detail( in, &ind );
+        get_instruction_detail( tmp_in, &ind );
         switch( ind.op ) {
             case JMP:
             case FORLOOP:
@@ -313,19 +316,19 @@ void delete_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to )
                     int jmp_to = i+ind.sBx+1;
                     if( i < from ) {
                         if( jmp_to > to )
-                            jmp_to -= del_cnt;
+                            jmp_to += mod_cnt;
                         else if( jmp_to >= from )
                             jmp_to = from;
                     }
                     else if( i > to ) {
                         if( jmp_to < from )
-                            jmp_to -= del_cnt;
+                            jmp_to += mod_cnt;
                         else if( jmp_to <= to )
                             jmp_to = to+1;
                     }
                     ind.sBx = jmp_to-i-1;
                 }
-                make_instruction( in, &ind );
+                make_instruction( tmp_in, &ind );
                 break;
             default:
                 break;
@@ -333,32 +336,38 @@ void delete_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to )
     }
 
     // update instruction list
-    fb->instruction_list.size -= del_cnt;
+    int old_size = fb->instruction_list.size;
+    fb->instruction_list.size += mod_cnt;
     Instruction* new_insts = malloc( sizeof( Instruction )*fb->instruction_list.size );
     if( from > 0 )
         memcpy( new_insts, fb->instruction_list.value, sizeof( Instruction )*from );
     int rem = old_size-to-1;
     if( rem )
-        memcpy( new_insts+from, fb->instruction_list.value+to+1, sizeof( Instruction )*rem );
+        memcpy( new_insts+from+size, fb->instruction_list.value+to+1, sizeof( Instruction )*rem );
+    Instruction* ni = &new_insts[from];
+    for( i = 0; i < size; i++, ni++, in++ ) {
+        ni->opcode = in->opcode;
+        ni->line_pos = in->line_pos;
+        ni->hint = 0;
+    }
     free( fb->instruction_list.value );
     fb->instruction_list.value = new_insts;
 
     // update local scope
     int unuse_cnt = 0;
     Local *l;
-    for( i = 0; i < fb->local_list.size; i++ ) {
-        l = &fb->local_list.value[i];
+    for( i = 0, l = fb->local_list.value; i < fb->local_list.size; i++, l++ ) {
         if( l->end < from )
             continue;
         else if( l->start > to ) {
-            l->start -= del_cnt;
-            l->end -= del_cnt;
+            l->start += mod_cnt;
+            l->end += mod_cnt;
         }
         else if( l->start < from ) {
             if( l->end <= to )
-                l->end = from;
+                l->end = from+size;
             else
-                l->end -= del_cnt;
+                l->end += mod_cnt;
         }
         else {
             if( l->end <= to ) {
@@ -368,25 +377,19 @@ void delete_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to )
             }
             else {
                 l->start = from;
-                l->end -= del_cnt;
+                l->end += mod_cnt;
             }
         }
-
-        if( l->start > to )
-            l->start -= del_cnt;
-        else if( l->start >= from )
-            l->start = from;
     }
     // remove unused locals
     if( unuse_cnt > 0 ) {
         fb->local_list.size = fb->local_list.size-unuse_cnt;
         Local* new_locals = malloc( sizeof( Local )*( fb->local_list.size ) );
-        int next = 0;
-        for( i = 0; i < fb->local_list.size; i++ ) {
-            l = &fb->local_list.value[i];
+        Local* nl = new_locals;
+        for( i = 0, l = fb->local_list.value; i < fb->local_list.size; i++, l++ ) {
             if( l->start != -1 && l->end != -1 ) {
-                Local* nl = &new_locals[next++];
                 memcpy( nl, l, sizeof( Local ) );
+                nl++;
             }
         }
         free( fb->local_list.value );
@@ -399,81 +402,45 @@ void delete_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to )
         CodeBlock* cb = *ppcb;
         if( cb ) {
             if( cb->exit >= to )
-                cb->exit -= del_cnt;
+                cb->exit += mod_cnt;
             if( cb->entry >= from )
-                cb->entry -= del_cnt;
+                cb->entry += mod_cnt;
         }
     }
+}
 
-    // TODO
-    // update constant
+void delete_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to )
+{
+    modify_instruction( fb, cb, from, to, 0, 0 );
 }
 
 void insert_instruction( FunctionBlock* fb, CodeBlock* cb, int pos, Instruction* in, int size )
 {
-    if( pos < cb->entry || pos > cb->exit ) return;
+    modify_instruction( fb, cb, pos, -1, in, size );
+}
 
-    // update jmp
+int append_constant( FunctionBlock* fb, Constant* c )
+{
     int i;
-    for( i = 0; i < fb->instruction_list.size; i++ ) {
-        Instruction* in = &fb->instruction_list.value[i];
-        InstructionDetail ind;
-        get_instruction_detail( in, &ind );
-        switch( ind.op ) {
-            case JMP:
-            case FORLOOP:
-            case FORPREP:
-                {
-                    int jmp_to = i+ind.sBx+1;
-                    if( i < pos && jmp_to >= pos )
-                        ind.sBx += size;
-                    else if( i >= pos && jmp_to < pos )
-                        ind.sBx -= size;
-                }
-                break;
-            default:
-                break;
-        }
-    }
-
-    // update instruction list
-    int old_size = fb->instruction_list.size;
-    fb->instruction_list.size += size;
-    Instruction* new_insts = malloc( sizeof( Instruction )*fb->instruction_list.size );
-    if( pos > 0 )
-        memcpy( new_insts, fb->instruction_list.value, sizeof( Instruction )*pos );
-    if( pos < old_size-1 )
-        memcpy( new_insts, fb->instruction_list.value+pos+size, sizeof( Instruction )*( old_size-pos ) );
-    Instruction* ni = &fb->instruction_list.value[pos];
-    for( i = 0; i < size; i++, ni++, in++ ) {
-        ni->opcode = in->opcode;
-        ni->line_pos = in->line_pos;
-    }
-
-    // update local scope
-    for( i = 0; i < fb->local_list.size; i++ ) {
-        Local *l = &fb->local_list.value[i];
-        if( l->start >= pos ) {
-            l->start += size;
-            l->end += size;
-        }
-        else if( l->start < pos && l->end >= pos )
-            l->end += size;
-    }
-
-    // update code block
-    CodeBlock** ppcb = fb->code_block;
-    for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
-        CodeBlock* cb = *ppcb;
-        if( cb ) {
-            if( pos >= cb->entry && pos <= cb->exit )
-                cb->exit += size;
-            else if( pos < cb->exit ) {
-                cb->entry += size;
-                cb->exit += size;
+    Constant* pc;
+    for( i = 0, pc = fb->constant_list.value; i < fb->constant_list.size; i++, pc++ ) {
+        if( c->type == pc->type ) {
+            if( c->type == LUA_TSTRING ) {
+                if( is_same_string( &c->string, &pc->string ) )
+                    return i;
+            }
+            else {
+                if( c->number == pc->number )
+                    return i;
             }
         }
     }
+
+    int new_size = fb->constant_list.size+1;
+    fb->constant_list.size = new_size;
+    fb->constant_list.value = realloc( fb->constant_list.value, new_size*sizeof( Constant ) );
+    fb->constant_list.value[new_size-1] = *c;
+    return new_size-1;
 }
 
 //--------------------------------------------------
@@ -527,12 +494,39 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
     }
 }
 
+#define OPT_CF_ARITH            0x01
+#define OPT_CF_HIGH_PRIORITY    0x02
+#define OPT_CF_COMMUTABLE       0x04
+
+#define OPT_CF_IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )
+
 #define OPT_CF_CHECK_FROM \
     if( opt_from ) { \
         opt_to = j-1; \
-        printf( "%d %d\n", opt_from, opt_to ); \
+        if( !oa->hint ) { \
+            Instruction tmp_in; \
+            make_instruction( &tmp_in, &prev ); \
+            modify_instruction( fb, cb, opt_from, opt_to, &tmp_in, 1 ); \
+            format_function( fb, oa ); \
+            j -= ( opt_to-opt_from ); \
+        } \
         opt_from = 0; \
+        prev_flag = 0; \
     }
+
+void constant_binary_arith_op( Constant* c1, Constant *c2, int op )
+{
+    if( c1->type != LUA_TNUMBER || c2->type != LUA_TNUMBER ) return;
+
+    switch( op ) {
+        case ADD:
+            c1->number += c2->number;
+            break;
+        case MUL:
+            c1->number *= c2->number;
+            break;
+    }
+}
 
 void constant_folding( FunctionBlock* fb, OptArg* oa )
 {
@@ -543,29 +537,72 @@ void constant_folding( FunctionBlock* fb, OptArg* oa )
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         CodeBlock* cb = *ppcb;
         if( cb ) {
-            Instruction* in = &fb->instruction_list.value[cb->entry];
-            InstructionDetail prev;
+            InstructionDetail curr, prev;
             char prev_flag = 0;
             int opt_from = 0, opt_to = 0;
             int j;
-            for( j = cb->entry; j <= cb->exit; j++, in++ ) {
-                InstructionDetail curr;
+            for( j = cb->entry; j <= cb->exit; j++ ) {
+                Instruction* in = &fb->instruction_list.value[j];
                 get_instruction_detail( in, &curr );
 
                 char flag = 0;
-                if( curr.op == ADD || curr.op == SUB )
-                    flag = ARITH_OP | ADD_OP;
-                else if( curr.op == MUL || curr.op == DIV ) {
-                    flag = ARITH_OP;
+                switch( curr.op ) {
+                    case ADD:
+                        flag = OPT_CF_ARITH | OPT_CF_COMMUTABLE;
+                        break;
+                    case SUB:
+                        flag = OPT_CF_ARITH;
+                        break;
+                    case MUL:
+                        flag = OPT_CF_ARITH | OPT_CF_HIGH_PRIORITY | OPT_CF_COMMUTABLE;
+                        break;
+                    case DIV:
+                        flag = OPT_CF_ARITH | OPT_CF_COMMUTABLE;
+                        break;
+                    default:
+                        break;
                 }
 
+                // is arith op, has const param
                 if( flag && ( IS_CONST( curr.B ) || IS_CONST( curr.C ) ) ) {
-                    if( curr.A == prev.A && prev_flag == flag ) {
-                        // opt
+                    // same priority
+                    // prev output reg is curr input reg
+                    // prev output reg is an temporary slot
+                    if( ( prev_flag & OPT_CF_HIGH_PRIORITY ) == ( flag & OPT_CF_HIGH_PRIORITY )
+                        && ( prev.A == curr.B || prev.A == curr.C )
+                        && !OPT_CF_IS_LOCAL( prev.A, j-1 ) ) {
                         if( oa->hint )
                             in->hint |= HINT_CONSTANT_FOLDING;
                         else {
                             // merge op
+                            Constant *c1, *c2;
+                            int prev_R;
+                            if( IS_CONST( prev.B ) ) {
+                                c1 = &fb->constant_list.value[prev.B-CONST_BASE];
+                                prev_R = prev.C;
+                            }
+                            else {
+                                c1 = &fb->constant_list.value[prev.C-CONST_BASE];
+                                prev_R = prev.B;
+                            }
+                            if( IS_CONST( curr.B ) )
+                                c2 = &fb->constant_list.value[curr.B-CONST_BASE];
+                            else
+                                c2 = &fb->constant_list.value[curr.C-CONST_BASE];
+                            
+                            Constant nc;
+                            nc = *c1;
+                            constant_binary_arith_op( &nc, c2, curr.op );
+                            int cid = append_constant( fb, &nc );
+
+                            if( IS_CONST( curr.B ) ) {
+                                curr.B = cid+CONST_BASE;
+                                curr.C = prev_R;
+                            }
+                            else {
+                                curr.C = cid+CONST_BASE;
+                                curr.B = prev_R;
+                            }
                         }
                     }
                     else {
