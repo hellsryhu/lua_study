@@ -162,32 +162,41 @@ void read_upvalue( FILE* f, UpvalueList* ul )
     }
 }
 
-void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr )
+void read_function( FILE* f, FunctionBlock* fb, int lv )
 {
     read_string( f, &fb->source_name );
     fread( &fb->first_line, 1, 12, f );
 
     read_instruction( f, &fb->instruction_list );
-    smr->total_instruction_num += fb->instruction_list.size;
-    int i;
-    for( i = 0; i < fb->instruction_list.size; i++ ) {
-        Instruction* in = &fb->instruction_list.value[i];
-        unsigned char op = in->opcode & 0x3F;
-        smr->instruction_num[op]++;
-    }
 
     read_constant( f, &fb->constant_list );
     fread( &fb->num_func, sizeof( int ), 1, f );
     fb->funcs = realloc( fb->funcs, sizeof( FunctionBlock )*fb->num_func );
-    FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
-    for( i = 0; i < fb->num_func; i++, pfb++ ) {
+    int i;
+    FunctionBlock* pfb;
+    for( i = 0, pfb = fb->funcs; i < fb->num_func; i++, pfb++ ) {
         memset( pfb, 0, sizeof( FunctionBlock ) );
-        read_function( f, pfb, lv+1, smr );
+        read_function( f, pfb, lv+1 );
     }
     read_linepos( f, &fb->instruction_list );
     read_local( f, &fb->local_list );
     read_upvalue( f, &fb->upvalue_list );
     fb->level = lv;
+}
+
+void get_summary( FunctionBlock* fb, Summary* smr )
+{
+    smr->total_instruction_num += fb->instruction_list.size;
+    int i;
+    Instruction* in;
+    for( i = 0, in = fb->instruction_list.value; i < fb->instruction_list.size; i++, in++ ) {
+        unsigned char op = GET_OP( in->opcode );
+        smr->instruction_num[op]++;
+    }
+
+    FunctionBlock *pfb;
+    for( i = 0, pfb = fb->funcs; i < fb->num_func; i++, pfb++ )
+        get_summary( pfb, smr );
 }
 
 void reset_stack_frames( FunctionBlock* fb )
@@ -219,19 +228,19 @@ void reset_stack_frames( FunctionBlock* fb )
 
 void get_instruction_detail( Instruction* in, InstructionDetail* ind )
 {
-    ind->op = in->opcode & 0x3F;
-    ind->A = ( in->opcode >> 6 ) & 0xFF;
+    ind->op = GET_OP( in->opcode );
+    ind->A = GET_A( in->opcode );
     ind->desc = &INSTRUCTION_DESC[ind->op];
     switch( ind->desc->type ) {
         case iABC:
-            ind->B = in->opcode >> 23;
-            ind->C = ( in->opcode >> 14 ) & 0x1FF;
+            ind->B = GET_B( in->opcode );
+            ind->C = GET_C( in->opcode );
             break;
         case iABx:
-            ind->Bx = in->opcode >> 14;
+            ind->Bx = GET_BX( in->opcode );
             break;
         case iAsBx:
-            ind->sBx = ( in->opcode >> 14 )-0x1FFFF;
+            ind->sBx = GET_SBX( in->opcode );
             break;
     }
     ind->line_pos = in->line_pos;
@@ -269,11 +278,6 @@ void format_luaheader( LuaHeader* lh )
     printf( "size of lua number:\t%d\n", lh->size_number );
     printf( "integral flag:\t%d\n", lh->integral_flag );
 }
-
-#define FORMAT_LEVEL \
-    for( tmp_lv = 0; tmp_lv < fb->level; tmp_lv++ ) \
-        printf( "\t" ); \
-    printf
 
 #define FORMAT_REGISTER( R ) \
     { \
@@ -748,21 +752,23 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* 
         printf( "\n" );
 }
 
-void format_function( FunctionBlock* fb, OptArg* oa )
+void format_function( FunctionBlock* fb, OptArg* oa, int recursive, int verbose )
 {
     reset_stack_frames( fb );
 
     int i;
     int tmp_lv;
-    if( fb->source_name.size > 0 ) {
-        FORMAT_LEVEL( "source name:\t%s\n", fb->source_name.value );
+    if( verbose ) {
+        if( fb->source_name.size > 0 ) {
+            FORMAT_LEVEL( "source name:\t%s\n", fb->source_name.value );
+        }
+        else {
+            FORMAT_LEVEL( "line defined:\t%d ~ %d\n", fb->first_line, fb->last_line );
+        }
+        //FORMAT_LEVEL( "number of upvalues:\t%d\n", fb->num_upvalue );
+        FORMAT_LEVEL( "number of parameters:\t%d\n", fb->num_parameter );
+        FORMAT_LEVEL( "is_vararg flag:\t%d\n", fb->is_vararg );
     }
-    else {
-        FORMAT_LEVEL( "line defined:\t%d ~ %d\n", fb->first_line, fb->last_line );
-    }
-    //FORMAT_LEVEL( "number of upvalues:\t%d\n", fb->num_upvalue );
-    FORMAT_LEVEL( "number of parameters:\t%d\n", fb->num_parameter );
-    FORMAT_LEVEL( "is_vararg flag:\t%d\n", fb->is_vararg );
     FORMAT_LEVEL( "maximum stack size:\t%d\n", fb->max_stack_size );
 
     if( fb->constant_list.size > 0 ) {
@@ -835,12 +841,12 @@ void format_function( FunctionBlock* fb, OptArg* oa )
         format_instruction( fb, in, i, oa );
     }
 
-    if( fb->num_func > 0 ) {
+    if( recursive && fb->num_func > 0 ) {
         FORMAT_LEVEL( "function prototype list:\n" );
 
         FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
         for( i = 0; i < fb->num_func; i++ ) {
-            format_function( pfb, oa );
+            format_function( pfb, oa, recursive, verbose );
             pfb++;
             printf( "\n" );
         }

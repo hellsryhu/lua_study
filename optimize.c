@@ -122,9 +122,9 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
     int i;
     for( i = 0; i < fb->instruction_list.size; i++ ) {
         Instruction* in = &fb->instruction_list.value[i];
-        unsigned char op = in->opcode & 0x3F;
-        unsigned short C = ( in->opcode >> 14 ) & 0x1FF;
-        int sBx = ( in->opcode >> 14 )-0x1FFFF;
+        unsigned char op = GET_OP( in->opcode );
+        unsigned short C = GET_C( in->opcode );
+        int sBx = GET_SBX( in->opcode );
         switch( op ) {
             // end of block
             case LOADBOOL:
@@ -296,6 +296,7 @@ void modify_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to, Ins
     if( from < cb->entry || from > cb->exit ) return;
     if( to < cb->entry || to > cb->exit ) return;
 
+    printf( "delete %d~%d insert %d\n", from, to, size );
     int mod_cnt = size;
     if( to >= from )
         mod_cnt += from-to-1;
@@ -503,12 +504,12 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
 #define OPT_CF_CHECK_FROM \
     if( opt_from ) { \
         opt_to = j-1; \
-        if( !oa->hint ) { \
+        if( opt_to > opt_from && !oa->hint ) { \
             Instruction tmp_in; \
             make_instruction( &tmp_in, &prev ); \
             modify_instruction( fb, cb, opt_from, opt_to, &tmp_in, 1 ); \
-            format_function( fb, oa ); \
             j -= ( opt_to-opt_from ); \
+            opt += 1; \
         } \
         opt_from = 0; \
         prev_flag = 0; \
@@ -528,11 +529,12 @@ void constant_binary_arith_op( Constant* c1, Constant *c2, int op )
     }
 }
 
-void constant_folding( FunctionBlock* fb, OptArg* oa )
+int constant_folding( FunctionBlock* fb, OptArg* oa )
 {
-    if( !oa->associative_law ) return;
+    if( !oa->associative_law ) return 0;
 
     CodeBlock** ppcb = fb->code_block;
+    int opt = 0;
     int i;
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         CodeBlock* cb = *ppcb;
@@ -567,10 +569,10 @@ void constant_folding( FunctionBlock* fb, OptArg* oa )
                 if( flag && ( IS_CONST( curr.B ) || IS_CONST( curr.C ) ) ) {
                     // same priority
                     // prev output reg is curr input reg
-                    // prev output reg is an temporary slot
+                    // prev output reg is an temporary slot or prev output reg is curr output reg
                     if( ( prev_flag & OPT_CF_HIGH_PRIORITY ) == ( flag & OPT_CF_HIGH_PRIORITY )
                         && ( prev.A == curr.B || prev.A == curr.C )
-                        && !OPT_CF_IS_LOCAL( prev.A, j-1 ) ) {
+                        && ( !OPT_CF_IS_LOCAL( prev.A, j-1 ) || prev.A == curr.A ) ) {
                         if( oa->hint )
                             in->hint |= HINT_CONSTANT_FOLDING;
                         else {
@@ -625,18 +627,36 @@ void constant_folding( FunctionBlock* fb, OptArg* oa )
             OPT_CF_CHECK_FROM;
         }
     }
+    return opt;
 }
 
 void optimize( FunctionBlock* fb, OptArg* oa )
 {
+    int verbose = 1;
+    if( !oa->hint && !oa->opt_output ) {
+        format_function( fb, oa, 0, verbose );
+        verbose = 0;
+    }
+
     // general optimization
     dead_code_elimination( fb, oa );
 
     // local optimization
-    constant_folding( fb, oa );
+    while( constant_folding( fb, oa ) != 0 );
 
-    int i = 0;
-    FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
-    for( ; i < fb->num_func; i++, pfb++ )
-        optimize( pfb, oa );
+    int tmp_lv;
+    if( oa->hint || !oa->opt_output ) {
+        if( !oa->hint ) {
+            FORMAT_LEVEL( "optimized:\n" );
+        }
+        format_function( fb, oa, 0, verbose );
+    }
+
+    if( fb->num_func > 0 ) {
+        FORMAT_LEVEL( "function prototype list:\n" );
+        int i = 0;
+        FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
+        for( ; i < fb->num_func; i++, pfb++ )
+            optimize( pfb, oa );
+    }
 }

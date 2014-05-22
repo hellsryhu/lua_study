@@ -43,6 +43,13 @@ typedef struct
     char* value;
 } String;
 
+#define GET_OP( O ) ( O & 0x3F )
+#define GET_A( O ) ( ( O >> 6 ) & 0xFF )
+#define GET_B( O ) ( O >> 23 )
+#define GET_C( O ) ( ( O >> 14 ) & 0x1FF )
+#define GET_BX( O ) GET_C( O )
+#define GET_SBX( O ) ( ( O >> 14 )-0x1FFFF )
+
 enum INSTRUCTION
 {
     MOVE = 0,
@@ -92,9 +99,6 @@ enum INSTRUCTION_TYPE
     iAsBx = 2,
 };
 
-#define CONST_BASE 0x100
-#define IS_CONST( RK ) ( RK >= CONST_BASE )
-
 typedef struct
 {
     const char* name;
@@ -131,6 +135,9 @@ typedef struct
     int size;
     Instruction* value;
 } InstructionList;
+
+#define CONST_BASE 0x100
+#define IS_CONST( RK ) ( RK >= CONST_BASE )
 
 enum CONSTANT_TYPE
 {
@@ -234,15 +241,22 @@ typedef struct
 
 int is_same_string( String* s1, String* s2 );
 
-void read_function( FILE* f, FunctionBlock* fb, int lv, Summary* smr );
+void read_function( FILE* f, FunctionBlock* fb, int lv );
+
+void get_summary( FunctionBlock* fb, Summary* smr );
 
 void reset_stack_frames( FunctionBlock* fb );
 
 void get_instruction_detail( Instruction* in, InstructionDetail* ind );
 void make_instruction( Instruction* in, InstructionDetail* ind );
 
+#define FORMAT_LEVEL \
+    for( tmp_lv = 0; tmp_lv < fb->level; tmp_lv++ ) \
+        printf( "\t" ); \
+    printf
+
 void format_luaheader( LuaHeader* lh );
-void format_function( FunctionBlock* fb, OptArg* fo );
+void format_function( FunctionBlock* fb, OptArg* fo, int recursive, int verbose );
 
 void write_function( FILE* f, FunctionBlock* fb );
 

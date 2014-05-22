@@ -89,22 +89,35 @@ int main( int argc, char* argv[] )
 
     FunctionBlock fb;
     memset( &fb, 0, sizeof( FunctionBlock ) );
-    Summary smr;
-    memset( &smr, 0, sizeof( Summary ) );
-    read_function( f, &fb, 0, &smr );
+    read_function( f, &fb, 0 );
 
     fclose( f );
 
-    if( !oa.quiet ) {
-        if( oa.hint ) {
-            flow_analysis( &fb, &oa );
-            optimize( &fb, &oa );
+    if( oa.optimize ) {
+        flow_analysis( &fb, &oa );
+
+        optimize( &fb, &oa );
+
+        if( !oa.hint && oa.opt_output ) {
+            f = fopen( oa.opt_output, "w+" );
+
+            fwrite( &lh, 1, sizeof( LuaHeader ), f );
+
+            write_function( f, &fb );
+
+            fclose( f );
         }
-        format_function( &fb, &oa );
+    }
+    else if( !oa.quiet ) {
+        format_function( &fb, &oa, 1, 1 );
         printf( "\n" );
     }
 
     if( oa.summary ) {
+        Summary smr;
+        memset( &smr, 0, sizeof( Summary ) );
+        get_summary( &fb, &smr );
+
         printf( "total instruction num: %d\n", smr.total_instruction_num );
         int i;
         for( i = 0; i <= VARARG; i++ ) {
@@ -114,26 +127,6 @@ int main( int argc, char* argv[] )
             }
         }
         printf( "\n" );
-    }
-
-    if( oa.optimize && !oa.hint ) {
-        flow_analysis( &fb, &oa );
-
-        optimize( &fb, &oa );
-
-        if( oa.opt_output ) {
-            f = fopen( oa.opt_output, "w+" );
-
-            fwrite( &lh, 1, sizeof( LuaHeader ), f );
-
-            write_function( f, &fb );
-
-            fclose( f );
-        }
-        else {
-            printf( "optimized:\n" );
-            format_function( &fb, &oa );
-        }
     }
 
     return 0;
