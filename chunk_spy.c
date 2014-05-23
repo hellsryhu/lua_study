@@ -27,16 +27,16 @@ int main( int argc, char* argv[] )
     OptArg oa;
     memset( &oa, 0, sizeof( OptArg ) );
     // test
-    oa.associative_law = 1;
+    oa.constant_folding = 1;
 
     int ch;
-    while( ( ch = getopt( argc, argv, "abhHo:Oqsv" ) ) != EOF ) {
+    while( ( ch = getopt( argc, argv, "bchHo:Oqsv" ) ) != EOF ) {
         switch( ch ) {
-            case 'a':
-                oa.associative_law = 1;
-                break;
             case 'b':
                 oa.block = 1;
+                break;
+            case 'c':
+                oa.constant_folding = 1;
                 break;
             case 'h':
                 oa.block = 1;

@@ -13,8 +13,8 @@
 
 typedef struct
 {
-    char associative_law;
     char block;
+    char constant_folding;
     char header;
     char hint;
     char optimize;

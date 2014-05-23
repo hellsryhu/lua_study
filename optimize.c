@@ -531,7 +531,7 @@ void constant_binary_arith_op( Constant* c1, Constant *c2, int op )
 
 int constant_folding( FunctionBlock* fb, OptArg* oa )
 {
-    if( !oa->associative_law ) return 0;
+    if( !oa->constant_folding ) return 0;
 
     CodeBlock** ppcb = fb->code_block;
     int opt = 0;
@@ -646,9 +646,8 @@ void optimize( FunctionBlock* fb, OptArg* oa )
 
     int tmp_lv;
     if( oa->hint || !oa->opt_output ) {
-        if( !oa->hint ) {
-            FORMAT_LEVEL( "optimized:\n" );
-        }
+        if( !oa->hint )
+            printf( "! optimized\n" );
         format_function( fb, oa, 0, verbose );
     }
 
@@ -656,7 +655,9 @@ void optimize( FunctionBlock* fb, OptArg* oa )
         FORMAT_LEVEL( "function prototype list:\n" );
         int i = 0;
         FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
-        for( ; i < fb->num_func; i++, pfb++ )
+        for( ; i < fb->num_func; i++, pfb++ ) {
             optimize( pfb, oa );
+            printf( "\n" );
+        }
     }
 }

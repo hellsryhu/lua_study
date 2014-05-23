@@ -166,13 +166,13 @@ TODO:
 
 local optimization
     constant folding
-        需要保证所有重定义算术运算元方法满足结合律，即
+        需要保证所有重定义算术运算元方法满足交换律，即
         V+K = K+V
         这样才能让形如
         K1+V+K2
         的代码优化为
         K1+K2+V
-        所以提供一个-a的选项来决定是否要打开constant folding优化
+        所以提供一个-c的选项来决定是否要打开constant folding优化
 写完constant folding之后重构一次代码
     constant propagation
 
