@@ -498,6 +498,11 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
 #define OPT_CF_ARITH            0x01
 #define OPT_CF_HIGH_PRIORITY    0x02
 #define OPT_CF_COMMUTABLE       0x04
+#define OPT_CF_MERGE_C1         0x01    // 1st op is commutable
+#define OPT_CF_MERGE_BR1        0x02    // 1st op register is B
+#define OPT_CF_MERGE_C2         0x04    // 2nd op is commutable
+#define OPT_CF_MERGE_BR2        0x08    // 2nd op register is B
+
 
 #define OPT_CF_IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )
 
@@ -567,16 +572,28 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
 
                 // is arith op, has const param
                 if( flag && ( IS_CONST( curr.B ) || IS_CONST( curr.C ) ) ) {
+                    // prev is an optimizable op
                     // same priority
                     // prev output reg is curr input reg
                     // prev output reg is an temporary slot or prev output reg is curr output reg
-                    if( ( prev_flag & OPT_CF_HIGH_PRIORITY ) == ( flag & OPT_CF_HIGH_PRIORITY )
+                    if( prev_flag 
+                        && ( prev_flag & OPT_CF_HIGH_PRIORITY ) == ( flag & OPT_CF_HIGH_PRIORITY )
                         && ( prev.A == curr.B || prev.A == curr.C )
                         && ( !OPT_CF_IS_LOCAL( prev.A, j-1 ) || prev.A == curr.A ) ) {
                         if( oa->hint )
                             in->hint |= HINT_CONSTANT_FOLDING;
                         else {
                             // merge op
+                            int merge_flag = 0;
+                            if( prev_flag & OPT_CF_COMMUTABLE )
+                                merge_flag |= OPT_CF_MERGE_C1;
+                            else if( !IS_CONST( prev.B ) )
+                                merge_flag |= OPT_CF_MERGE_BR1;
+                            if( flag & OPT_CF_COMMUTABLE )
+                                merge_flag |= OPT_CF_MERGE_C2;
+                            else if( !IS_CONST( curr.B ) )
+                                merge_flag |= OPT_CF_MERGE_BR2;
+
                             Constant *c1, *c2;
                             int prev_R;
                             if( IS_CONST( prev.B ) ) {
@@ -591,10 +608,15 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
                                 c2 = &fb->constant_list.value[curr.B-CONST_BASE];
                             else
                                 c2 = &fb->constant_list.value[curr.C-CONST_BASE];
-                            
+
                             Constant nc;
                             nc = *c1;
-                            constant_binary_arith_op( &nc, c2, curr.op );
+                            switch( merge_flag ) {
+                                case OPT_CF_MERGE_C1 | OPT_CF_MERGE_C2:
+                                    constant_binary_arith_op( &nc, c2, curr.op );
+                                    break;
+                            };
+
                             int cid = append_constant( fb, &nc );
 
                             if( IS_CONST( curr.B ) ) {
@@ -617,8 +639,7 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
                     prev = curr;
                     prev_flag = flag;
                 }
-
-                if( !flag ) {
+                else {
                     prev_flag = 0;
 
                     OPT_CF_CHECK_FROM;
