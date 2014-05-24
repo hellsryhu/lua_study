@@ -319,11 +319,15 @@ void format_constant( Constant* c )
             break;
         case LUA_TNUMBER:
             {
+                if( c->number < 0 )
+                    printf( "(" );
                 double fractional = c->number-( long long )( c->number );
                 if( fractional == 0 )
                     printf( "%lld", ( long long )( c->number ) );
                 else
                     printf( "%f", c->number );
+                if( c->number < 0 )
+                    printf( ")" );
             }
             break;
         case LUA_TSTRING:

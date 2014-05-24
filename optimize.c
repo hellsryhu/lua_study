@@ -503,7 +503,6 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
 #define OPT_CF_MERGE_C2         0x04    // 2nd op is commutable
 #define OPT_CF_MERGE_BR2        0x08    // 2nd op register is B
 
-
 #define OPT_CF_IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )
 
 #define OPT_CF_CHECK_FROM \
@@ -520,6 +519,9 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
         prev_flag = 0; \
     }
 
+#define OPT_CF_COMMUTE_OP( op ) ( ( op == ADD || op == SUB ) ? ADD : MUL )
+#define OPT_CF_NCOMMUTE_OP( op ) ( ( op == ADD || op == SUB ) ? SUB : DIV )
+
 void constant_binary_arith_op( Constant* c1, Constant *c2, int op )
 {
     if( c1->type != LUA_TNUMBER || c2->type != LUA_TNUMBER ) return;
@@ -528,8 +530,14 @@ void constant_binary_arith_op( Constant* c1, Constant *c2, int op )
         case ADD:
             c1->number += c2->number;
             break;
+        case SUB:
+            c1->number -= c2->number;
+            break;
         case MUL:
             c1->number *= c2->number;
+            break;
+        case DIV:
+            c1->number /= c2->number;
             break;
     }
 }
@@ -564,7 +572,7 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
                         flag = OPT_CF_ARITH | OPT_CF_HIGH_PRIORITY | OPT_CF_COMMUTABLE;
                         break;
                     case DIV:
-                        flag = OPT_CF_ARITH | OPT_CF_COMMUTABLE;
+                        flag = OPT_CF_ARITH | OPT_CF_HIGH_PRIORITY;
                         break;
                     default:
                         break;
@@ -610,22 +618,56 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
                                 c2 = &fb->constant_list.value[curr.C-CONST_BASE];
 
                             Constant nc;
-                            nc = *c1;
+                            int BR = 1;
                             switch( merge_flag ) {
                                 case OPT_CF_MERGE_C1 | OPT_CF_MERGE_C2:
+                                    nc = *c1;
                                     constant_binary_arith_op( &nc, c2, curr.op );
+                                    break;
+                                case OPT_CF_MERGE_BR1:
+                                    BR = 0;
+                                case OPT_CF_MERGE_BR1 | OPT_CF_MERGE_BR2:
+                                    nc = *c1;
+                                    constant_binary_arith_op( &nc, c2, OPT_CF_COMMUTE_OP( curr.op ) );
+                                    break;
+                                case OPT_CF_MERGE_BR2:
+                                    BR = 0;
+                                case 0:
+                                    nc = *c1;
+                                    constant_binary_arith_op( &nc, c2, curr.op );
+                                    break;
+                                case OPT_CF_MERGE_BR1 | OPT_CF_MERGE_C2:
+                                    nc = *c1;
+                                    constant_binary_arith_op( &nc, c2, prev.op );
+                                    curr.op = prev.op;
+                                    break;
+                                case OPT_CF_MERGE_C2:
+                                    nc = *c1;
+                                    constant_binary_arith_op( &nc, c2, curr.op );
+                                    curr.op = prev.op;
+                                    BR = 0;
+                                    break;
+                                case OPT_CF_MERGE_C1 | OPT_CF_MERGE_BR2:
+                                    nc = *c1;
+                                    constant_binary_arith_op( &nc, c2, curr.op );
+                                    curr.op = prev.op;
+                                    break;
+                                case OPT_CF_MERGE_C1:
+                                    nc = *c2;
+                                    constant_binary_arith_op( &nc, c1, curr.op );
+                                    BR = 0;
                                     break;
                             };
 
                             int cid = append_constant( fb, &nc );
 
-                            if( IS_CONST( curr.B ) ) {
-                                curr.B = cid+CONST_BASE;
-                                curr.C = prev_R;
+                            if( BR ) {
+                                curr.B = prev_R;
+                                curr.C = cid+CONST_BASE;
                             }
                             else {
-                                curr.C = cid+CONST_BASE;
-                                curr.B = prev_R;
+                                curr.B = cid+CONST_BASE;
+                                curr.C = prev_R;
                             }
                         }
                     }
