@@ -1,4 +1,3 @@
---[[
 function no_tmp_slot()
     local a = 1
     a = a+2
@@ -178,7 +177,6 @@ function div8()
     a = 2/a
     a = a*3
 end
---]]
 
 function div9()
     local a = 1

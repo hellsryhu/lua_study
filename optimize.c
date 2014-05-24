@@ -296,7 +296,6 @@ void modify_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to, Ins
     if( from < cb->entry || from > cb->exit ) return;
     if( to < cb->entry || to > cb->exit ) return;
 
-    printf( "delete %d~%d insert %d\n", from, to, size );
     int mod_cnt = size;
     if( to >= from )
         mod_cnt += from-to-1;
@@ -473,15 +472,16 @@ void* dce_iterator( void* node, void* next )
         return cb->num_succ > 0 ? *succ : 0;
 }
 
-void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
+int dead_code_elimination( FunctionBlock* fb, OptArg* oa )
 {
     CodeBlock* cb = fb->code_block[0];
     dfs( cb, dce_traverse, dce_iterator );
 
-    if( oa->hint ) return;
+    if( oa->hint ) return 0;
 
     // beware!!! only set a null pos
     int i;
+    int ret = 0;
     CodeBlock** ppcb = fb->code_block;
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         cb = *ppcb;
@@ -491,8 +491,11 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
             *ppcb = 0;
 
             free( cb );
+
+            ret++;
         }
     }
+    return ret;
 }
 
 #define OPT_CF_ARITH            0x01
@@ -513,7 +516,7 @@ void dead_code_elimination( FunctionBlock* fb, OptArg* oa )
             make_instruction( &tmp_in, &prev ); \
             modify_instruction( fb, cb, opt_from, opt_to, &tmp_in, 1 ); \
             j -= ( opt_to-opt_from ); \
-            opt += 1; \
+            opt++; \
         } \
         opt_from = 0; \
         prev_flag = 0; \
@@ -702,16 +705,21 @@ void optimize( FunctionBlock* fb, OptArg* oa )
     }
 
     // general optimization
-    dead_code_elimination( fb, oa );
+    int opt = dead_code_elimination( fb, oa );
 
     // local optimization
-    while( constant_folding( fb, oa ) != 0 );
+    int ret = 0;
+    while( ( ret = constant_folding( fb, oa ) ) != 0 )
+        opt += ret;
 
     int tmp_lv;
-    if( oa->hint || !oa->opt_output ) {
-        if( !oa->hint )
-            printf( "! optimized\n" );
+    if( oa->hint )
         format_function( fb, oa, 0, verbose );
+    else {
+        if( !oa->opt_output && opt ) {
+            FORMAT_LEVEL( "! optimized\n" );
+            format_function( fb, oa, 0, verbose );
+        }
     }
 
     if( fb->num_func > 0 ) {

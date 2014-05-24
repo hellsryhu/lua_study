@@ -26,8 +26,6 @@ int main( int argc, char* argv[] )
 
     OptArg oa;
     memset( &oa, 0, sizeof( OptArg ) );
-    // test
-    oa.constant_folding = 1;
 
     int ch;
     while( ( ch = getopt( argc, argv, "bchHo:Oqsv" ) ) != EOF ) {

@@ -155,7 +155,6 @@ code block & flow analyzer
 code edit
     delete, insert
     不破坏block结构
-TODO:
     还有问题，需要各种调试
     实现modify(和先delete再insert不同，只处理一次)
     更新变量作用域
@@ -173,6 +172,7 @@ local optimization
         的代码优化为
         K1+K2+V
         所以提供一个-c的选项来决定是否要打开constant folding优化
+TODO:
 写完constant folding之后重构一次代码
     constant propagation
 
