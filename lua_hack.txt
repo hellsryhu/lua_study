@@ -174,5 +174,9 @@ local optimization
         所以提供一个-c的选项来决定是否要打开constant folding优化
 TODO:
 写完constant folding之后重构一次代码
+    类型定义
+    杂项功能
+    优化
+    输出打印
     constant propagation
 

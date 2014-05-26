@@ -1,11 +1,13 @@
 #include <unistd.h>
+#include "rwf.h"
+#include "analyze.h"
 #include "optimize.h"
 
 extern InstructionDesc INSTRUCTION_DESC[];
 
 void output_usage()
 {
-    printf( "usage: chunk_spy [options] lc_filename\n" );
+    printf( "usage: luao [options] lc_filename\n" );
     printf( "\t-a       associative law\n" );
     printf( "\t-b       show block info\n" );
     printf( "\t-h       show optimize hint\n" );
@@ -74,6 +76,7 @@ int main( int argc, char* argv[] )
     }
     printf( "filename:\t%s\n\n", filename );
 
+    // read lc file
     FILE* f = fopen( filename, "r" );
     if( !f )
         return 0;
@@ -92,11 +95,13 @@ int main( int argc, char* argv[] )
     fclose( f );
 
     if( oa.optimize ) {
+        // optimize
         flow_analysis( &fb, &oa );
 
         optimize( &fb, &oa );
 
         if( !oa.hint && oa.opt_output ) {
+            // write optimized file
             f = fopen( oa.opt_output, "w+" );
 
             fwrite( &lh, 1, sizeof( LuaHeader ), f );
@@ -107,10 +112,12 @@ int main( int argc, char* argv[] )
         }
     }
     else if( !oa.quiet ) {
+        // format output only
         format_function( &fb, &oa, 1, 1 );
         printf( "\n" );
     }
 
+    // show opcode summary
     if( oa.summary ) {
         Summary smr;
         memset( &smr, 0, sizeof( Summary ) );

@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include "utils.h"
 
 void quick_sort( void** array, int start, int end, int ( *is_greater )( void*, void* ) )

@@ -1,58 +1,17 @@
-#include <string.h>
-#include "chunk_type.h"
+#include "rwf.h"
+#include "analyze.h"
 
 //--------------------------------------------------
 // constants
 //--------------------------------------------------
 
-const char* sABC[] = { "A", "B", "C" };
-const char* sABx[] = { "A", "Bx" };
-const char* sAsBx[] = { "A", "sBx" };
+extern const char* sABC[];
+extern const char* sABx[];
+extern const char* sAsBx[];
 
-InstructionDesc INSTRUCTION_DESC[] = {
-    { "MOVE     ", iABC, 2, "R(A) := R(B)" },
-    { "LOADK    ", iABx, 2, "R(A) := Kst(Bx)" },
-    { "LOADBOOL ", iABC, 3, "R(A) := (Bool)B; if (C) PC++" },
-    { "LOADNIL  ", iABC, 2, "R(A) := ... := R(B) := nil" },
-    { "GETUPVAL ", iABC, 2, "R(A) := UpValue[B]" },
-    { "GETGLOBAL", iABx, 2, "R(A) := Gbl[Kst(Bx)]" },
-    { "GETTABLE ", iABC, 3, "R(A) := R(B)[RK(C)]" },
-    { "SETGLOBAL", iABx, 2, "Gbl[Kst(Bx)] := R(A)" },
-    { "SETUPVAL ", iABC, 2, "UpValue[B] := R(A)" },
-    { "SETTABLE ", iABC, 3, "R(A)[RK(B)] := RK(C)" },
-    { "NEWTABLE ", iABC, 3, "R(A) := {} (size = B,C)" },
-    { "SELF     ", iABC, 3, "R(A+1) := R(B); R(A) := R(B)[RK(C)]" },
-    { "ADD      ", iABC, 3, "R(A) := RK(B) + RK(C)" },
-    { "SUB      ", iABC, 3, "R(A) := RK(B) ¨C RK(C)" },
-    { "MUL      ", iABC, 3, "R(A) := RK(B) * RK(C)" },
-    { "DIV      ", iABC, 3, "R(A) := RK(B) / RK(C)" },
-    { "MOD      ", iABC, 3, "R(A) := RK(B) % RK(C)" },
-    { "POW      ", iABC, 3, "R(A) := RK(B) ^ RK(C)" },
-    { "UNM      ", iABC, 2, "R(A) := -R(B)" },
-    { "NOT      ", iABC, 2, "R(A) := not R(B)" },
-    { "LEN      ", iABC, 2, "R(A) := length of R(B)" },
-    { "CONCAT   ", iABC, 3, "R(A) := R(B).. ... ..R(C)" },
-    { "JMP      ", iAsBx, 1, "PC += sBx" },
-    { "EQ       ", iABC, 3, "if ((RK(B) == RK(C)) ~= A) then PC++" },
-    { "LT       ", iABC, 3, "if ((RK(B) < RK(C)) ~= A) then PC++" },
-    { "LE       ", iABC, 3, "if ((RK(B) <= RK(C)) ~= A) then PC++" },
-    { "TEST     ", iABC, 3, "if not (R(A) <=> C) then PC++" },
-    { "TESTSET  ", iABC, 3, "if (R(B) <=> C) then R(A) := R(B) else PC++" },
-    { "CALL     ", iABC, 3, "R(A), ... ,R(A+C-2) := R(A)(R(A+1), ... ,R(A+B-1))" },
-    { "TAILCALL ", iABC, 3, "return R(A)(R(A+1), ... ,R(A+B-1))" },
-    { "RETURN   ", iABC, 2, "return R(A), ... ,R(A+B-2)" },
-    { "FORLOOP  ", iAsBx, 2, "R(A) += R(A+2);if R(A) <?= R(A+1) then { PC += sBx; R(A+3) = R(A) }" },
-    { "FORPREP  ", iAsBx, 2, "R(A) -= R(A+2); PC += sBx" },
-    { "TFORLOOP ", iABC, 3, "R(A+3), ... ,R(A+2+C) := R(A)(R(A+1), R(A+2)); if R(A+3) ~= nil then { R(A+2) = R(A+3); } else { PC++; }" },
-    { "SETLIST  ", iABC, 3, "R(A)[(C-1)*FPF+i] := R(A+i), 1 <= i <= B" },
-    { "CLOSE    ", iABC, 1, "close all variables in the stack up to (>=) R(A)" },
-    { "CLOSURE  ", iABx, 2, "R(A) := closure(KPROTO[Bx], R(A), ... ,R(A+n))" },
-    { "VARARG   ", iABC, 2, "R(A), R(A+1), ..., R(A+B-1) = vararg" },
-};
+extern InstructionDesc INSTRUCTION_DESC[];
 
-const char* OPTIMIZATION_HINT[] = {
-    "constant folding",
-};
+extern const char* OPTIMIZATION_HINT[];
 
 //--------------------------------------------------
 // util functions
@@ -182,84 +141,6 @@ void read_function( FILE* f, FunctionBlock* fb, int lv )
     read_local( f, &fb->local_list );
     read_upvalue( f, &fb->upvalue_list );
     fb->level = lv;
-}
-
-void get_summary( FunctionBlock* fb, Summary* smr )
-{
-    smr->total_instruction_num += fb->instruction_list.size;
-    int i;
-    Instruction* in;
-    for( i = 0, in = fb->instruction_list.value; i < fb->instruction_list.size; i++, in++ ) {
-        unsigned char op = GET_OP( in->opcode );
-        smr->instruction_num[op]++;
-    }
-
-    FunctionBlock *pfb;
-    for( i = 0, pfb = fb->funcs; i < fb->num_func; i++, pfb++ )
-        get_summary( pfb, smr );
-}
-
-void reset_stack_frames( FunctionBlock* fb )
-{
-    int i;
-    StackFrame* pframe;
-    if( fb->stack_frames ) {
-        for( i = 0, pframe = fb->stack_frames; i < fb->instruction_list.size; i++, pframe++ )
-            free( pframe->slots );
-        free( fb->stack_frames );
-    }
-
-    // gen stack frames
-    fb->stack_frames = malloc( fb->instruction_list.size*sizeof( StackFrame ) );
-    memset( fb->stack_frames, 0, fb->instruction_list.size*sizeof( StackFrame ) );
-    for( i = 0, pframe = fb->stack_frames; i < fb->instruction_list.size; i++, pframe++ ) {
-        pframe->slots = malloc( fb->max_stack_size*sizeof( int ) );
-        memset( pframe->slots, -1, fb->max_stack_size*sizeof( int ) );
-    }
-    Local* l;
-    for( i = 0, l = fb->local_list.value; i < fb->local_list.size; i++, l++ ) {
-        int j;
-        int start = l->start-1;
-        start = start < 0 ? 0 : start;
-        for( j = l->start, pframe = &fb->stack_frames[start]; j <= l->end; j++, pframe++ )
-            pframe->slots[pframe->max_local++] = i;
-    }
-}
-
-void get_instruction_detail( Instruction* in, InstructionDetail* ind )
-{
-    ind->op = GET_OP( in->opcode );
-    ind->A = GET_A( in->opcode );
-    ind->desc = &INSTRUCTION_DESC[ind->op];
-    switch( ind->desc->type ) {
-        case iABC:
-            ind->B = GET_B( in->opcode );
-            ind->C = GET_C( in->opcode );
-            break;
-        case iABx:
-            ind->Bx = GET_BX( in->opcode );
-            break;
-        case iAsBx:
-            ind->sBx = GET_SBX( in->opcode );
-            break;
-    }
-    ind->line_pos = in->line_pos;
-}
-
-void make_instruction( Instruction* in, InstructionDetail* ind )
-{
-    switch( ind->desc->type ) {
-        case iABC:
-            in->opcode = ind->op | ( ind->A << 6 ) | ( ind->B << 23 ) | ( ind->C << 14 );
-            break;
-        case iABx:
-            in->opcode = ind->op | ( ind->A << 6 ) | ( ind->Bx << 14 );
-            break;
-        case iAsBx:
-            in->opcode = ind->op | ( ind->A << 6 ) | ( ( ind->sBx+0x1FFFF ) << 14 );
-            break;
-    }
-    in->line_pos = ind->line_pos;
 }
 
 //--------------------------------------------------

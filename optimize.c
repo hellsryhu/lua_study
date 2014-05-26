@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <memory.h>
 #include "utils.h"
+#include "rwf.h"
+#include "analyze.h"
 #include "optimize.h"
 
 //--------------------------------------------------
