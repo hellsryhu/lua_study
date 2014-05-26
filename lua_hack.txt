@@ -172,11 +172,14 @@ local optimization
         的代码优化为
         K1+K2+V
         所以提供一个-c的选项来决定是否要打开constant folding优化
-TODO:
 写完constant folding之后重构一次代码
     类型定义
     杂项功能
     优化
     输出打印
+TODO:
     constant propagation
+        模拟语句执行导致栈元素变化的结果
+        各种语句需要hardcode
+    common sub-expression elimination
 

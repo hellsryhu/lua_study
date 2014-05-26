@@ -1,10 +1,10 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <memory.h>
+#include <math.h>
 #include "utils.h"
 #include "rwf.h"
 #include "analyze.h"
 #include "optimize.h"
+
+extern InstructionDesc INSTRUCTION_DESC[];
 
 //--------------------------------------------------
 // control flow analysis functions
@@ -405,7 +405,7 @@ void modify_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to, Ins
         if( cb ) {
             if( cb->exit >= to )
                 cb->exit += mod_cnt;
-            if( cb->entry >= from )
+            if( cb->entry > from )
                 cb->entry += mod_cnt;
         }
     }
@@ -443,6 +443,108 @@ int append_constant( FunctionBlock* fb, Constant* c )
     fb->constant_list.value = realloc( fb->constant_list.value, new_size*sizeof( Constant ) );
     fb->constant_list.value[new_size-1] = *c;
     return new_size-1;
+}
+
+void neaten_constant_list( FunctionBlock* fb )
+{
+    // get constant usage
+    int i;
+    Instruction* in;
+    char* usage = malloc( fb->constant_list.size );
+    memset( usage, 0, fb->constant_list.size );
+    for( i = 0, in = fb->instruction_list.value; i < fb->instruction_list.size; i++, in++ ) {
+        InstructionDetail ind;
+        get_instruction_detail( in, &ind );
+        switch( ind.op ) {
+            case LOADK:
+            case GETGLOBAL:
+            case SETGLOBAL:
+                usage[ind.Bx] = 1;
+                break;
+            case SETTABLE:
+            case ADD:
+            case SUB:
+            case MUL:
+            case DIV:
+            case MOD:
+            case POW:
+            case EQ:
+            case LT:
+            case LE:
+                if( IS_CONST( ind.B ) )
+                    usage[ind.B-CONST_BASE] = 1;
+            case GETTABLE:
+            case SELF:
+                if( IS_CONST( ind.C ) )
+                    usage[ind.C-CONST_BASE] = 1;
+                break;
+            default:
+                break;
+        }
+    }
+
+    int use_cnt = 0;
+    char* u;
+    for( i = 0, u = usage; i < fb->constant_list.size; i++, u++ ) {
+        if( *u )
+            use_cnt++;
+    }
+
+    if( use_cnt < fb->constant_list.size ) {
+        // realloc consts
+        Constant* consts = malloc( use_cnt*sizeof( Constant ) );
+
+        Constant* c;
+        Constant* nc = consts;
+        int new_idx = 0;
+        for( i = 0, u = usage, c = fb->constant_list.value; i < fb->constant_list.size; i++, u++, c++ ) {
+            if( *u ) {
+                *nc++ = *c;
+                *u = new_idx++;
+            }
+            else if( c->type == LUA_TSTRING )
+                free( c->string.value );
+        }
+
+        fb->constant_list.size = use_cnt;
+        free( fb->constant_list.value );
+        fb->constant_list.value = consts;
+
+        // update instructions
+        for( i = 0, in = fb->instruction_list.value; i < fb->instruction_list.size; i++, in++ ) {
+            InstructionDetail ind;
+            get_instruction_detail( in, &ind );
+            switch( ind.op ) {
+                case LOADK:
+                case GETGLOBAL:
+                case SETGLOBAL:
+                    ind.Bx = usage[ind.Bx];
+                    break;
+                case SETTABLE:
+                case ADD:
+                case SUB:
+                case MUL:
+                case DIV:
+                case MOD:
+                case POW:
+                case EQ:
+                case LT:
+                case LE:
+                    if( IS_CONST( ind.B ) )
+                        ind.B = usage[ind.B-CONST_BASE]+CONST_BASE;
+                case GETTABLE:
+                case SELF:
+                    if( IS_CONST( ind.C ) )
+                        ind.C = usage[ind.C-CONST_BASE]+CONST_BASE;
+                    break;
+                default:
+                    break;
+            }
+            make_instruction( in, &ind );
+        }
+    }
+
+    free( usage );
 }
 
 //--------------------------------------------------
@@ -511,7 +613,7 @@ int dead_code_elimination( FunctionBlock* fb, OptArg* oa )
 #define OPT_CF_IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )
 
 #define OPT_CF_CHECK_FROM \
-    if( opt_from ) { \
+    if( opt_from != -1 ) { \
         opt_to = j-1; \
         if( opt_to > opt_from && !oa->hint ) { \
             Instruction tmp_in; \
@@ -520,7 +622,7 @@ int dead_code_elimination( FunctionBlock* fb, OptArg* oa )
             j -= ( opt_to-opt_from ); \
             opt++; \
         } \
-        opt_from = 0; \
+        opt_from = -1; \
         prev_flag = 0; \
     }
 
@@ -544,6 +646,14 @@ void constant_binary_arith_op( Constant* c1, Constant *c2, int op )
         case DIV:
             c1->number /= c2->number;
             break;
+        case MOD:
+            c1->number = c1->number-floor( c1->number/c2->number )*c2->number;
+            break;
+        case POW:
+            c1->number = pow( c1->number, c2->number );
+            break;
+        default:
+            break;
     }
 }
 
@@ -559,7 +669,7 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
         if( cb ) {
             InstructionDetail curr, prev;
             char prev_flag = 0;
-            int opt_from = 0, opt_to = 0;
+            int opt_from = -1, opt_to;
             int j;
             for( j = cb->entry; j <= cb->exit; j++ ) {
                 Instruction* in = &fb->instruction_list.value[j];
@@ -680,8 +790,9 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
                         OPT_CF_CHECK_FROM;
                     }
 
-                    if( !opt_from )
+                    if( opt_from == -1 )
                         opt_from = j;
+                    printf( "%d\n", opt_from );
 
                     prev = curr;
                     prev_flag = flag;
@@ -698,6 +809,109 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
     return opt;
 }
 
+int constant_propagation( FunctionBlock* fb, OptArg* oa )
+{
+    CodeBlock** ppcb = fb->code_block;
+    int opt = 0;
+    int i;
+    int* R2C = malloc( fb->max_stack_size*sizeof( int ) );
+    int* r2c = R2C;
+    for( i = 0; i < fb->max_stack_size; i++, r2c++ )
+        *r2c = -1;
+    for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
+        CodeBlock* cb = *ppcb;
+        if( cb ) {
+            int j;
+            for( j = cb->entry; j <= cb->exit; j++ ) {
+                Instruction* in = &fb->instruction_list.value[j];
+                InstructionDetail curr;
+                get_instruction_detail( in, &curr );
+
+                switch( curr.op ) {
+                    case MOVE:
+                        R2C[curr.A] = R2C[curr.B];
+                        if( R2C[curr.A] != -1 ) {
+                            curr.op = LOADK;
+                            curr.desc = &INSTRUCTION_DESC[LOADK];
+                            curr.Bx = R2C[curr.A];
+                            make_instruction( in, &curr );
+
+                            R2C[curr.A] = curr.Bx;
+
+                            opt++;
+                        }
+                        break;
+                    case LOADK:
+                        R2C[curr.A] = curr.Bx;
+                        break;
+                    case GETUPVAL:
+                    case GETGLOBAL:
+                    case GETTABLE:
+                    case NEWTABLE:
+                    case CONCAT:
+                        R2C[curr.A] = -1;
+                        break;
+                    case SELF:
+                        R2C[curr.A] = -1;
+                        R2C[curr.A+1] = -1;
+                        break;
+                    case CALL:
+                    case TFORLOOP:
+                    case CLOSURE:
+                    case VARARG:
+                        break;
+                    case ADD:
+                    case SUB:
+                    case MUL:
+                    case DIV:
+                    case MOD:
+                    case POW:
+                        {
+                            Constant *c1 = 0, *c2 = 0;
+                            if( IS_CONST( curr.B ) )
+                                c1 = &fb->constant_list.value[curr.B-CONST_BASE];
+                            else {
+                                if( R2C[curr.B] != -1 )
+                                    c1 = &fb->constant_list.value[R2C[curr.B]];
+                            }
+                            if( IS_CONST( curr.C ) )
+                                c2 = &fb->constant_list.value[curr.C-CONST_BASE];
+                            else {
+                                if( R2C[curr.C] != -1 )
+                                    c2 = &fb->constant_list.value[R2C[curr.C]];
+                            }
+                            if( c1 && c2 ) {
+                                if( oa->hint )
+                                    in->hint |= HINT_CONSTANT_PROPAGATION;
+                                else {
+                                    Constant nc = *c1;
+                                    constant_binary_arith_op( &nc, c2, curr.op );
+                                    curr.op = LOADK;
+                                    curr.desc = &INSTRUCTION_DESC[LOADK];
+                                    curr.Bx = append_constant( fb, &nc );
+                                    make_instruction( in, &curr );
+
+                                    R2C[curr.A] = curr.Bx;
+
+                                    opt++;
+                                }
+                            }
+                            else
+                                R2C[curr.A] = -1;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+
+    free( R2C );
+
+    return opt;
+}
+
 void optimize( FunctionBlock* fb, OptArg* oa )
 {
     int verbose = 1;
@@ -710,9 +924,14 @@ void optimize( FunctionBlock* fb, OptArg* oa )
     int opt = dead_code_elimination( fb, oa );
 
     // local optimization
+    opt += constant_propagation( fb, oa );
+
     int ret = 0;
     while( ( ret = constant_folding( fb, oa ) ) != 0 )
         opt += ret;
+
+    if( !oa->hint )
+        neaten_constant_list( fb );
 
     int tmp_lv;
     if( oa->hint )

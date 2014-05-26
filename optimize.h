@@ -2,7 +2,8 @@
 
 #include "ltype.h"
 
-#define HINT_CONSTANT_FOLDING 0x00000001
+#define HINT_CONSTANT_FOLDING       0x00000001
+#define HINT_CONSTANT_PROPAGATION   0x00000002
 
 //--------------------------------------------------
 // functions

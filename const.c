@@ -51,5 +51,6 @@ InstructionDesc INSTRUCTION_DESC[] = {
 
 const char* OPTIMIZATION_HINT[] = {
     "constant folding",
+    "constant propagation",
 };
 

@@ -1,4 +1,6 @@
 #include <unistd.h>
+#include <stdio.h>
+#include <memory.h>
 #include "rwf.h"
 #include "analyze.h"
 #include "optimize.h"
