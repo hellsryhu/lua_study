@@ -141,6 +141,8 @@ void read_function( FILE* f, FunctionBlock* fb, int lv )
     read_local( f, &fb->local_list );
     read_upvalue( f, &fb->upvalue_list );
     fb->level = lv;
+
+    reset_stack_frames( fb );
 }
 
 //--------------------------------------------------
@@ -639,8 +641,6 @@ void format_instruction( FunctionBlock* fb, Instruction* in, int order, OptArg* 
 
 void format_function( FunctionBlock* fb, OptArg* oa, int recursive, int verbose )
 {
-    reset_stack_frames( fb );
-
     int i;
     int tmp_lv;
     if( verbose ) {

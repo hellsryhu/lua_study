@@ -177,9 +177,37 @@ local optimization
     杂项功能
     优化
     输出打印
+修正flow analysis中前驱后继计算的问题
 TODO:
+真重构
+    构建codeblock内语句的依赖关系
+    redundancy elimination
+        重复赋值
     constant propagation
         模拟语句执行导致栈元素变化的结果
         各种语句需要hardcode
-    common sub-expression elimination
+    common subexpression elimination
 
+拼字符串的优化
+    分析
+        table.concat比直接用..快很多
+        但是table内存扩展开销很大，如果是拼很多个不长的字符串，那么频繁的内存扩张开销就会超过生成临时字符串的操作
+        例子，拼sql语句
+    解决方案
+    push str
+        check_stack 1
+        move top, str
+        top++
+    local old_top = gettop()
+    push ...
+    push ...
+    push ...
+    push ...
+    concat top-old_top
+
+字节码转换
+    把字节码文本转换成二进制
+    规则
+    转换模块
+    外部工具
+    内嵌到lua，支持在lua代码中写字节码，类似内嵌汇编

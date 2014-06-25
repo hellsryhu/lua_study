@@ -10,18 +10,20 @@ extern InstructionDesc INSTRUCTION_DESC[];
 // control flow analysis functions
 //--------------------------------------------------
 
-#define CODE_BLOCK_EXIT( id ) \
+#define CODE_BLOCK_EXIT( id, seq ) \
     { \
         cb->exit = id; \
+        cb->succ_sequential = seq; \
         list_add_tail( &cb->node, &code_block_node ); \
     }
 
-#define CODE_BLOCK_ENTRY( id ) \
+#define CODE_BLOCK_ENTRY( id, seq ) \
     { \
         if( id < fb->instruction_list.size ) { \
             cb = ( CodeBlock* )malloc( sizeof( CodeBlock ) ); \
             memset( cb, 0, sizeof( CodeBlock ) ); \
             cb->entry = id; \
+            cb->pred_sequential = seq; \
         }\
         else \
             cb = 0; \
@@ -46,7 +48,7 @@ int get_code_block( FunctionBlock* fb, int instruction_id )
     return -1;
 }
 
-void create_successors( FunctionBlock* fb, CodeBlock* cb, int first, int last, struct list_head* pos, Jump** jmps_from )
+void create_successors( FunctionBlock* fb, CodeBlock* cb, int first, int last, Jump** jmps_from )
 {
     int* to_blocks = ( int* )malloc( fb->num_code_block*sizeof( int ) );
     memset( to_blocks, 0, fb->num_code_block*sizeof( int ) );
@@ -57,6 +59,9 @@ void create_successors( FunctionBlock* fb, CodeBlock* cb, int first, int last, s
         if( to_block >= 0 )
             to_blocks[to_block]++;
     }
+
+    if( cb->succ_sequential )
+        to_blocks[cb->id]++;
 
     int size = 0;
     int* blk = to_blocks;
@@ -76,7 +81,7 @@ void create_successors( FunctionBlock* fb, CodeBlock* cb, int first, int last, s
     free( to_blocks );
 }
  
-void create_predecessors( FunctionBlock* fb, CodeBlock* cb, int first, int last, struct list_head* pos, Jump** jmps_to )
+void create_predecessors( FunctionBlock* fb, CodeBlock* cb, int first, int last, Jump** jmps_to )
 {
     int* from_blocks = ( int* )malloc( fb->num_code_block*sizeof( int ) );
     memset( from_blocks, 0, fb->num_code_block*sizeof( int ) );
@@ -87,6 +92,9 @@ void create_predecessors( FunctionBlock* fb, CodeBlock* cb, int first, int last,
         if( from_block >= 0 )
             from_blocks[from_block]++;
     }
+
+    if( cb->pred_sequential )
+        from_blocks[cb->id-2]++;
 
     int size = 0;
     int* blk = from_blocks;
@@ -131,34 +139,34 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
             // end of block
             case LOADBOOL:
                 if( C ) {
-                    CODE_BLOCK_EXIT( i );
-                    CODE_BLOCK_ENTRY( i+1 );
+                    CODE_BLOCK_EXIT( i, 1 );
+                    CODE_BLOCK_ENTRY( i+1, 1 );
                     jmps[jmps_idx].from = i;
                     jmps[jmps_idx++].to = i+2;
                 }
                 break;
             case JMP:
-                CODE_BLOCK_EXIT( i );
-                CODE_BLOCK_ENTRY( i+1 );
+                CODE_BLOCK_EXIT( i, 0 );
+                CODE_BLOCK_ENTRY( i+1, 0 );
                 jmps[jmps_idx].from = i;
                 jmps[jmps_idx++].to = i+sBx+1;
                 break;
             case FORLOOP:
-                CODE_BLOCK_EXIT( i );
-                CODE_BLOCK_ENTRY( i+1 );
+                CODE_BLOCK_EXIT( i, 1 );
+                CODE_BLOCK_ENTRY( i+1, 1 );
                 jmps[jmps_idx].from = i;
                 jmps[jmps_idx++].to = i+1;
                 break;
             case RETURN:
             case TAILCALL:
-                CODE_BLOCK_EXIT( i );
-                CODE_BLOCK_ENTRY( i+1 );
+                CODE_BLOCK_EXIT( i, 0 );
+                CODE_BLOCK_ENTRY( i+1, 0 );
                 break;
             // start of block
             case FORPREP:
                 if( i != 0 ) {
-                    CODE_BLOCK_EXIT( i-1 );
-                    CODE_BLOCK_ENTRY( i );
+                    CODE_BLOCK_EXIT( i-1, 1 );
+                    CODE_BLOCK_ENTRY( i, 1 );
                     jmps[jmps_idx].from = i-1;
                     jmps[jmps_idx++].to = i;
                 }
@@ -201,8 +209,11 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
             memset( cb, 0, sizeof( CodeBlock ) );
             cb->entry = jmps_to[i]->to;
             cb->exit = ocb->exit;
+            cb->pred_sequential = 1;
+            cb->succ_sequential = ocb->succ_sequential;
 
             ocb->exit = jmps_to[i]->to-1;
+            ocb->succ_sequential = 1;
             list_add( &cb->node, &ocb->node );
 
             pos = &cb->node;
@@ -240,18 +251,18 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
         if( jmps_from[i]->from <= cb->exit )
             i++;
         else {
-            create_successors( fb, cb, first, i, pos, jmps_from );
+            create_successors( fb, cb, first, i, jmps_from );
 
             first = i;
 
             cb = fb->code_block[++j];
         }
     }
-    create_successors( fb, cb, first, i, pos, jmps_from );
+    create_successors( fb, cb, first, i, jmps_from );
 
     for( i = j+1; i < fb->num_code_block; i++ ) {
         cb = fb->code_block[i];
-        create_successors( fb, cb, 0, -1, pos, jmps_from );
+        create_successors( fb, cb, 0, -1, jmps_from );
     }
 
     // gen predecessor
@@ -263,18 +274,18 @@ void flow_analysis( FunctionBlock* fb, OptArg* oa )
         if( jmps_to[i]->to <= cb->exit )
             i++;
         else {
-            create_predecessors( fb, cb, first, i, pos, jmps_to );
+            create_predecessors( fb, cb, first, i, jmps_to );
 
             first = i;
 
             cb = fb->code_block[++j];
         }
     }
-    create_predecessors( fb, cb, first, i, pos, jmps_to );
+    create_predecessors( fb, cb, first, i, jmps_to );
 
     for( i = j+1; i < fb->num_code_block; i++ ) {
         cb = fb->code_block[i];
-        create_predecessors( fb, cb, 0, -1, pos, jmps_to );
+        create_predecessors( fb, cb, 0, -1, jmps_to );
     }
 
     free( jmps );
@@ -409,6 +420,8 @@ void modify_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to, Ins
                 cb->entry += mod_cnt;
         }
     }
+
+    reset_stack_frames( fb );
 }
 
 void delete_instruction( FunctionBlock* fb, CodeBlock* cb, int from, int to )
@@ -602,6 +615,13 @@ int dead_code_elimination( FunctionBlock* fb, OptArg* oa )
     return ret;
 }
 
+void create_instruction_flow( FunctionBlock* fb, CodeBlock* cb )
+{
+    // TODO
+}
+
+#define IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )
+
 #define OPT_CF_ARITH            0x01
 #define OPT_CF_HIGH_PRIORITY    0x02
 #define OPT_CF_COMMUTABLE       0x04
@@ -609,8 +629,6 @@ int dead_code_elimination( FunctionBlock* fb, OptArg* oa )
 #define OPT_CF_MERGE_BR1        0x02    // 1st op register is B
 #define OPT_CF_MERGE_C2         0x04    // 2nd op is commutable
 #define OPT_CF_MERGE_BR2        0x08    // 2nd op register is B
-
-#define OPT_CF_IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )
 
 #define OPT_CF_CHECK_FROM \
     if( opt_from != -1 ) { \
@@ -661,8 +679,8 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
 {
     if( !oa->constant_folding ) return 0;
 
-    CodeBlock** ppcb = fb->code_block;
     int opt = 0;
+    CodeBlock** ppcb = fb->code_block;
     int i;
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
         CodeBlock* cb = *ppcb;
@@ -702,7 +720,7 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
                     if( prev_flag 
                         && ( prev_flag & OPT_CF_HIGH_PRIORITY ) == ( flag & OPT_CF_HIGH_PRIORITY )
                         && ( prev.A == curr.B || prev.A == curr.C )
-                        && ( !OPT_CF_IS_LOCAL( prev.A, j-1 ) || prev.A == curr.A ) ) {
+                        && ( !IS_LOCAL( prev.A, j-1 ) || prev.A == curr.A ) ) {
                         if( oa->hint )
                             in->hint |= HINT_CONSTANT_FOLDING;
                         else {
@@ -792,7 +810,6 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
 
                     if( opt_from == -1 )
                         opt_from = j;
-                    printf( "%d\n", opt_from );
 
                     prev = curr;
                     prev_flag = flag;
@@ -811,11 +828,11 @@ int constant_folding( FunctionBlock* fb, OptArg* oa )
 
 int constant_propagation( FunctionBlock* fb, OptArg* oa )
 {
-    CodeBlock** ppcb = fb->code_block;
     int opt = 0;
-    int i;
+    CodeBlock** ppcb = fb->code_block;
     int* R2C = malloc( fb->max_stack_size*sizeof( int ) );
     int* r2c = R2C;
+    int i;
     for( i = 0; i < fb->max_stack_size; i++, r2c++ )
         *r2c = -1;
     for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
@@ -871,14 +888,26 @@ int constant_propagation( FunctionBlock* fb, OptArg* oa )
                             if( IS_CONST( curr.B ) )
                                 c1 = &fb->constant_list.value[curr.B-CONST_BASE];
                             else {
-                                if( R2C[curr.B] != -1 )
-                                    c1 = &fb->constant_list.value[R2C[curr.B]];
+                                if( R2C[curr.B] != -1 ) {
+                                    int c = R2C[curr.B];
+                                    if( !oa->hint ) {
+                                        curr.B = c+CONST_BASE;
+                                        make_instruction( in, &curr );
+                                    }
+                                    c1 = &fb->constant_list.value[c];
+                                }
                             }
                             if( IS_CONST( curr.C ) )
                                 c2 = &fb->constant_list.value[curr.C-CONST_BASE];
                             else {
-                                if( R2C[curr.C] != -1 )
-                                    c2 = &fb->constant_list.value[R2C[curr.C]];
+                                if( R2C[curr.C] != -1 ) {
+                                    int c = R2C[curr.C];
+                                    if( !oa->hint ) {
+                                        curr.C = c+CONST_BASE;
+                                        make_instruction( in, &curr );
+                                    }
+                                    c2 = &fb->constant_list.value[c];
+                                }
                             }
                             if( c1 && c2 ) {
                                 if( oa->hint )
@@ -912,6 +941,42 @@ int constant_propagation( FunctionBlock* fb, OptArg* oa )
     return opt;
 }
 
+int redundancy_elimination( FunctionBlock* fb, OptArg* oa )
+{
+    int opt = 0;
+    CodeBlock** ppcb = fb->code_block;
+    int i;
+    for( i = 0; i < fb->num_code_block; i++, ppcb++ ) {
+        CodeBlock* cb = *ppcb;
+        if( cb ) {
+            int j;
+            for( j = cb->entry; j <= cb->exit; j++ ) {
+                Instruction* in = &fb->instruction_list.value[j];
+                InstructionDetail ind;
+                get_instruction_detail( in, &ind );
+
+                switch( ind.op ) {
+                    case LOADK:
+                        if( !IS_LOCAL( ind.A, j ) ) {
+                            if( oa->hint )
+                                in->hint |= HINT_REDUNDANCY_ELEMINATION;
+                            else {
+                                delete_instruction( fb, cb, j, j );
+                                j--;
+                                opt++;
+                            }
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+
+    return opt;
+}
+
 void optimize( FunctionBlock* fb, OptArg* oa )
 {
     int verbose = 1;
@@ -923,12 +988,22 @@ void optimize( FunctionBlock* fb, OptArg* oa )
     // general optimization
     int opt = dead_code_elimination( fb, oa );
 
+    // create instruction flow
+    CodeBlock* cb;
+    int i = 0;
+    for( i = 0; i < fb->num_code_block; i++ ) {
+        cb = fb->code_block[i];
+        create_instruction_flow( fb, cb );
+    }
+
     // local optimization
     opt += constant_propagation( fb, oa );
 
     int ret = 0;
     while( ( ret = constant_folding( fb, oa ) ) != 0 )
         opt += ret;
+
+    //opt += redundancy_elimination( fb, oa );
 
     if( !oa->hint )
         neaten_constant_list( fb );
@@ -945,7 +1020,7 @@ void optimize( FunctionBlock* fb, OptArg* oa )
 
     if( fb->num_func > 0 ) {
         FORMAT_LEVEL( "function prototype list:\n" );
-        int i = 0;
+        i = 0;
         FunctionBlock* pfb = ( FunctionBlock* )fb->funcs;
         for( ; i < fb->num_func; i++, pfb++ ) {
             optimize( pfb, oa );

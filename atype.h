@@ -65,6 +65,8 @@ typedef struct
     void* successors;
     void* predecessors;
     char reachable;
+    char pred_sequential;
+    char succ_sequential;
 } CodeBlock;
 
 typedef struct
