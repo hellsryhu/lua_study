@@ -615,9 +615,89 @@ int dead_code_elimination( FunctionBlock* fb, OptArg* oa )
     return ret;
 }
 
-void create_instruction_flow( FunctionBlock* fb, CodeBlock* cb )
+void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
 {
-    // TODO
+    cb->instruction_context = malloc( sizeof( InstructionContext )*( cb->exit-cb->entry+1 ) );
+    memset( cb->instruction_context, 0, sizeof( InstructionContext )*( cb->exit-cb->entry+1 ) );
+    
+    // get affects
+    int i = cb->entry;
+    Instruction* in = &fb->instruction_list.value[i];
+    InstructionContext* ic = &cb->instruction_context[i];
+    for( ; i <= cb->exit; i++, in++, ic++ ) {
+        InstructionDetail ind;
+        get_instruction_detail( in, &ind );
+        switch( ind.op ) {
+            case MOVE:
+            case LOADK:
+            case LOADBOOL:
+            case GETUPVAL:
+            case GETGLOBAL:
+            case GETTABLE:
+            case NEWTABLE:
+            case ADD:
+            case SUB:
+            case MUL:
+            case DIV:
+            case MOD:
+            case POW:
+            case UNM:
+            case NOT:
+            case LEN:
+            case CONCAT:
+            case TESTSET:
+            case FORPREP:
+            case CLOSURE:
+                ic->affect_type = AT_REGISTER;
+                ic->affect_val = ind.A;
+                break;
+            case SETGLOBAL:
+                ic->affect_type = AT_GLOBAL;
+                ic->affect_val = ind.Bx;
+                break;
+            case SETUPVAL:
+                ic->affect_type = AT_UPVALUE;
+                ic->affect_val = ind.B;
+                break;
+            case SETTABLE:
+                ic->affect_type = AT_TABLE;
+                ic->affect_val = ind.A;     // register of table
+                ic->affect_val2 = ind.B;    // register or const of key
+                break;
+            case SELF:
+                ic->affect_type = AT_RANGE_REGISTER;
+                ic->affect_val = ind.A;     // start register
+                ic->affect_val2 = 1;        // register num
+                break;
+            case CALL:
+                ic->affect_type = AT_RANGE_REGISTER;
+                ic->affect_val = ind.A;
+                ic->affect_val2 = ind.C-2;
+                break;
+            case FORLOOP:
+                ic->affect_type = AT_2_REGISTER;
+                ic->affect_val = ind.A;         // register 1
+                ic->affect_val2 = ind.A+3;      // register 2
+                break;
+            case TFORLOOP:
+                ic->affect_type = AT_RANGE_REGISTER;
+                ic->affect_val = ind.A+2;
+                ic->affect_val2 = ind.C+2;
+                break;
+            case SETLIST:
+                ic->affect_type = AT_TABLE_RANGE;
+                ic->affect_val = ( ind.A << 16 )+ind.B;     // register of table & index range
+                ic->affect_val2 = ( ind.C-1 )*FPF;          // start of table index
+                break;
+            case VARARG:
+                ic->affect_type = AT_RANGE_REGISTER;
+                ic->affect_val = ind.A;
+                ic->affect_val2 = ind.B-1;
+                break;
+            default:
+                break;
+        }
+    }
 }
 
 #define IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )
@@ -993,7 +1073,7 @@ void optimize( FunctionBlock* fb, OptArg* oa )
     int i = 0;
     for( i = 0; i < fb->num_code_block; i++ ) {
         cb = fb->code_block[i];
-        create_instruction_flow( fb, cb );
+        create_instruction_context( fb, cb );
     }
 
     // local optimization

@@ -178,15 +178,24 @@ local optimization
     优化
     输出打印
 修正flow analysis中前驱后继计算的问题
+fixed format problem of lvalue/rvalue
+    local t = f()
+        r(0) = _G["f"]
+        t = t()             // should be t = r(0)()
+    when r(0) is an rvalue and t is an lvalue at the 1st line in its scope
+    rvalue should not be an local variable
+
 TODO:
 真重构
     构建codeblock内语句的依赖关系
+        instruction_context
     redundancy elimination
         重复赋值
     constant propagation
         模拟语句执行导致栈元素变化的结果
         各种语句需要hardcode
     common subexpression elimination
+    local function inlining
 
 拼字符串的优化
     分析

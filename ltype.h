@@ -96,6 +96,7 @@ typedef struct
     LocalList local_list;
     UpvalueList upvalue_list;
     int level;
+
     int num_code_block;
     CodeBlock** code_block;
     StackFrame* stack_frames;

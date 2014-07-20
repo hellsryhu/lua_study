@@ -54,6 +54,16 @@ typedef struct
 
 #define IS_CONST( RK ) ( RK >= CONST_BASE )
 
+typedef struct {
+    int num_depend;
+    int num_dependent;
+    int* depends;
+    int* dependents;
+    int affect_type;
+    int affect_val;
+    int affect_val2;
+} InstructionContext;
+
 typedef struct
 {
     struct list_head node;
@@ -67,6 +77,7 @@ typedef struct
     char reachable;
     char pred_sequential;
     char succ_sequential;
+    InstructionContext* instruction_context;
 } CodeBlock;
 
 typedef struct
