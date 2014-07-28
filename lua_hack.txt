@@ -21,6 +21,8 @@ parrallel vm execution
         ADD     __add
         GETTABLE    __index
         SETTABLE    __newindex
+    GETTABLE
+        两条GETTABLE操作不同寄存器上的表可能是同一张，也会影响并行的判断
 some thing like SIMD?
 	eg.
 		multiple get table: A.B.C
@@ -185,10 +187,25 @@ fixed format problem of lvalue/rvalue
     when r(0) is an rvalue and t is an lvalue at the 1st line in its scope
     rvalue should not be an local variable
 
-TODO:
 真重构
     构建codeblock内语句的依赖关系
         instruction_context
+            affect
+            depend
+                依赖table的特殊处理，如GETTABLE
+                常量key
+                    如果是常量key则可以依据key不同判定非依赖
+                    如果是变量key，因为暂时不能判定依赖，可以可以通过迭代propagation消除
+                栈上table来源是否可确定？
+                    如果是参数或者从其它表里查出来(包括GETGLOBAL)不能确定来源
+                    local new table则可以确定
+                    但是如果new table被其他引用会发生什么情况？
+                    所以为了简化处理，只保留key的规则，而不保留local table的规则
+                    有条件可以处理得更加细致
+                GETGLOBAL也有同样的问题，因为某个局部的表可能被赋值为_G
+TODO:
+            dependant
+        CLOSURE后的伪MOVE指令需要特殊处理下
     redundancy elimination
         重复赋值
     constant propagation
@@ -196,6 +213,9 @@ TODO:
         各种语句需要hardcode
     common subexpression elimination
     local function inlining
+    常量inline
+        会破坏脚本语言的灵活性，reload不方便，需要确定所有依赖需reload的常量的文件并全部reload
+        文件内常量inline，可以保持基于文件的reload，不过貌似意义不大
 
 拼字符串的优化
     分析

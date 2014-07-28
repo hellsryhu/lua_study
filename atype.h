@@ -80,6 +80,8 @@ typedef struct
     InstructionContext* instruction_context;
 } CodeBlock;
 
+#define CODE_BLOCK_LEN( cb ) ( cb->exit-cb->entry+1 )
+
 typedef struct
 {
     int from;

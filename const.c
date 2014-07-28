@@ -22,7 +22,7 @@ InstructionDesc INSTRUCTION_DESC[] = {
     { "NEWTABLE ", iABC, 3, "R(A) := {} (size = B,C)" },
     { "SELF     ", iABC, 3, "R(A+1) := R(B); R(A) := R(B)[RK(C)]" },
     { "ADD      ", iABC, 3, "R(A) := RK(B) + RK(C)" },
-    { "SUB      ", iABC, 3, "R(A) := RK(B) ¨C RK(C)" },
+    { "SUB      ", iABC, 3, "R(A) := RK(B) - RK(C)" },
     { "MUL      ", iABC, 3, "R(A) := RK(B) * RK(C)" },
     { "DIV      ", iABC, 3, "R(A) := RK(B) / RK(C)" },
     { "MOD      ", iABC, 3, "R(A) := RK(B) % RK(C)" },

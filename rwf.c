@@ -622,12 +622,6 @@ void format_instruction( FunctionBlock* fb, CodeBlock* cb, Instruction* in, int 
         default:
             break;
     }
-    /*
-    if( cb && cb->instruction_context ) {
-        InstructionContext* ic = &cb->instruction_context[order-cb->entry];
-        printf( "\t\tcontext: %d, %d, %d", ic->affect_type, ic->affect_val, ic->affect_val2 );
-    }
-    */
     if( oa->verbose ) {
         printf( "\t\t\t\t" );
         int p = 0;
@@ -651,6 +645,22 @@ void format_instruction( FunctionBlock* fb, CodeBlock* cb, Instruction* in, int 
     }
     else
         printf( "\n" );
+    if( cb && cb->instruction_context ) {
+        InstructionContext* ic = &cb->instruction_context[order-cb->entry];
+        FORMAT_LEVEL( "\t\taffect: %d, %d, %d\n", ic->affect_type, ic->affect_val, ic->affect_val2 );
+        FORMAT_LEVEL( "\t\tdepends:" );
+        int i = 0;
+        int cnt = 0;
+        for( ; i < ic->num_depend; i++ ) {
+            if( ic->depends[i] != -1 ) {
+                if( cnt > 0 )
+                    printf( "," );
+                printf( " %d", ic->depends[i] );
+                cnt++;
+            }
+        }
+        printf( "\n" );
+    }
 }
 
 void format_function( FunctionBlock* fb, OptArg* oa, int recursive, int verbose )

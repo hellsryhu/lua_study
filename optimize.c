@@ -615,6 +615,109 @@ int dead_code_elimination( FunctionBlock* fb, OptArg* oa )
     return ret;
 }
 
+int get_register_depend( CodeBlock* cb, int reg, int order )
+{
+    int i = order-1;
+    InstructionContext* ic = &cb->instruction_context[i];
+    for( ; i >= cb->entry; i--, ic-- ) {
+        switch( ic->affect_type ) {
+            case AT_REGISTER:
+                if( ic->affect_val == reg )
+                    return i;
+                break;
+            case AT_RANGE_REGISTER:
+                if( reg >= ic->affect_val && reg <= ic->affect_val2 )
+                    return i;
+                break;
+            case AT_2_REGISTER:
+                if( reg == ic->affect_val || reg == ic->affect_val2 )
+                    return i;
+                break;
+            default:
+                break;
+        }
+    }
+    return -1;
+}
+
+int get_global_depend( CodeBlock* cb, int key, int order )
+{
+    int i = order-1;
+    InstructionContext* ic = &cb->instruction_context[i];
+    for( ; i >= cb->entry; i--, ic-- ) {
+        if( ic->affect_type == AT_GLOBAL && ic->affect_val == key )
+            return i;
+    }
+    return -1;
+}
+
+int get_upvalue_depend( CodeBlock* cb, int uv, int order )
+{
+    int i = order-1;
+    InstructionContext* ic = &cb->instruction_context[i];
+    for( ; i >= cb->entry; i--, ic-- ) {
+        if( ic->affect_type == AT_UPVALUE && ic->affect_val == uv )
+            return i;
+    }
+    return -1;
+}
+
+// different register may save same table
+// different register may save same key
+// so we must consider table depends closest table changes
+int get_table_depend( FunctionBlock* fb, CodeBlock* cb, int reg, int key, int order )
+{
+    int i = order-1;
+    InstructionContext* ic = &cb->instruction_context[i];
+    for( ; i >= cb->entry; i--, ic-- ) {
+        switch( ic->affect_type ) {
+            case AT_TABLE:
+                if( IS_CONST( key ) && key == ic->affect_val2 )
+                    return i;
+                break;
+            case AT_TABLE_RANGE:
+                if( IS_CONST( key ) ) {
+                    Constant* c = &fb->constant_list.value[key];
+                    int start = ic->affect_val2;
+                    int end = start+( ic->affect_val & 0xFFFF );
+                    if( c->type == LUA_TNUMBER && c->number >= start && c->number <= end ) {    // same key
+                        return i;
+                    }
+                }
+                break;
+            case AT_REGISTER:
+                if( ic->affect_val == reg )
+                    return i;
+                break;
+            case AT_RANGE_REGISTER:
+                if( reg >= ic->affect_val && reg <= ic->affect_val2 )
+                    return i;
+                break;
+            case AT_2_REGISTER:
+                if( reg == ic->affect_val || reg == ic->affect_val2 )
+                    return i;
+                break;
+            default:
+                break;
+        }
+    }
+    return -1;
+}
+
+#define ALLOC_DEPENDS( size ) \
+    { \
+        ic->num_depend = size; \
+        ic->depends = size > 0 ? malloc( sizeof( int )*( size ) ) : 0; \
+    }
+#define RK_DEPEND( RK, idx ) \
+    { \
+        if( IS_CONST( RK ) ) \
+            ic->depends[idx] = -1; \
+        else \
+            ic->depends[idx] = get_register_depend( cb, RK-CONST_BASE, i ); \
+    }
+        
+
 void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
 {
     cb->instruction_context = malloc( sizeof( InstructionContext )*( cb->exit-cb->entry+1 ) );
@@ -651,6 +754,11 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                 ic->affect_type = AT_REGISTER;
                 ic->affect_val = ind.A;
                 break;
+            case LOADNIL:
+                ic->affect_type = AT_RANGE_REGISTER;
+                ic->affect_val = ind.A;     // start register
+                ic->affect_val2 = ind.B;        // end register
+                break;
             case SETGLOBAL:
                 ic->affect_type = AT_GLOBAL;
                 ic->affect_val = ind.Bx;
@@ -667,12 +775,12 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
             case SELF:
                 ic->affect_type = AT_RANGE_REGISTER;
                 ic->affect_val = ind.A;     // start register
-                ic->affect_val2 = 1;        // register num
+                ic->affect_val2 = ind.A+1;        // end register
                 break;
             case CALL:
                 ic->affect_type = AT_RANGE_REGISTER;
                 ic->affect_val = ind.A;
-                ic->affect_val2 = ind.C-2;
+                ic->affect_val2 = ind.A+ind.C-2;
                 break;
             case FORLOOP:
                 ic->affect_type = AT_2_REGISTER;
@@ -682,7 +790,7 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
             case TFORLOOP:
                 ic->affect_type = AT_RANGE_REGISTER;
                 ic->affect_val = ind.A+2;
-                ic->affect_val2 = ind.C+2;
+                ic->affect_val2 = ind.A+ind.C+2;
                 break;
             case SETLIST:
                 ic->affect_type = AT_TABLE_RANGE;
@@ -692,12 +800,123 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
             case VARARG:
                 ic->affect_type = AT_RANGE_REGISTER;
                 ic->affect_val = ind.A;
-                ic->affect_val2 = ind.B-1;
+                ic->affect_val2 = ind.A+ind.B-1;
                 break;
             default:
                 break;
         }
     }
+
+    // get depends
+    i = cb->entry;
+    in = &fb->instruction_list.value[i];
+    ic = &cb->instruction_context[0];
+    for( ; i <= cb->exit; i++, in++, ic++ ) {
+        InstructionDetail ind;
+        get_instruction_detail( in, &ind );
+        switch( ind.op ) {
+            case MOVE:
+            case SETGLOBAL:
+            case SETUPVAL:
+                ALLOC_DEPENDS( 1 );
+                ic->depends[0] = get_register_depend( cb, ind.B, i );
+                break;
+            case GETUPVAL:
+                ALLOC_DEPENDS( 1 );
+                ic->depends[0] = get_upvalue_depend( cb, ind.B, i );
+                break;
+            case GETGLOBAL:
+                ALLOC_DEPENDS( 2 );
+                ic->depends[0] = get_table_depend( fb, cb, -1, ind.Bx+CONST_BASE, i );
+                ic->depends[1] = get_global_depend( cb, ind.Bx, i );
+                break;
+            case GETTABLE:
+                ALLOC_DEPENDS( 2 );
+                ic->depends[0] = get_table_depend( fb, cb, ind.B, ind.C, i );
+                RK_DEPEND( ind.C, 1 );
+                break;
+            case SETTABLE:
+                ALLOC_DEPENDS( 3 );
+                ic->depends[0] = get_register_depend( cb, ind.A, i );
+                RK_DEPEND( ind.B, 1 );
+                RK_DEPEND( ind.C, 2 );
+                break;
+            case SELF:
+                ALLOC_DEPENDS( 2 );
+                ic->depends[0] = get_register_depend( cb, ind.B, i );
+                RK_DEPEND( ind.C, 1 );
+                break;
+            case ADD:
+            case SUB:
+            case MUL:
+            case DIV:
+            case MOD:
+            case POW:
+            case EQ:
+            case LT:
+            case LE:
+                ALLOC_DEPENDS( 2 );
+                RK_DEPEND( ind.B, 0 );
+                RK_DEPEND( ind.C, 1 );
+                break;
+            case UNM:
+            case NOT:
+            case LEN:
+            case TEST:
+            case TESTSET:
+                ALLOC_DEPENDS( 1 );
+                ic->depends[0] = get_register_depend( cb, ind.B, i );
+                break;
+            case CONCAT:
+                ALLOC_DEPENDS( ind.C-ind.B+1 );
+                {
+                    int j = 0;
+                    int r = ind.B;
+                    for( ; j <= ind.C-ind.B; j++, r++ )
+                        ic->depends[j] = get_register_depend( cb, r, i );
+                }
+                break;
+            case CALL:
+            case TAILCALL:
+            case SETLIST:
+                ALLOC_DEPENDS( ind.B );
+                {
+                    int j = 0;
+                    int r = ind.A;
+                    for( ; j < ind.B; j++, r++ )
+                        ic->depends[j] = get_register_depend( cb, r, i );
+                }
+                break;
+            case RETURN:
+                ALLOC_DEPENDS( ind.B-1 );
+                {
+                    int j = 0;
+                    int r = ind.A;
+                    for( ; j < ind.B-1; j++, r++ )
+                        ic->depends[j] = get_register_depend( cb, r, i );
+                }
+                break;
+            case FORLOOP:
+            case TFORLOOP:
+                ALLOC_DEPENDS( 4 );
+                {
+                    int j = 0;
+                    int r = ind.A;
+                    for( ; j < 4; j++, r++ )
+                        ic->depends[j] = get_register_depend( cb, r, i );
+                }
+                break;
+            case FORPREP:
+                ALLOC_DEPENDS( 2 );
+                ic->depends[0] = get_register_depend( cb, ind.A, i );
+                ic->depends[1] = get_register_depend( cb, ind.A+2, i );
+                break;
+            default:
+                break;
+        }
+    }
+
+    // get dependents
 }
 
 #define IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )
