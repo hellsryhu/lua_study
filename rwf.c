@@ -165,22 +165,25 @@ void format_luaheader( LuaHeader* lh )
 #define FORMAT_REGISTER( R, lval ) \
     { \
         if( fb->stack_frames ) { \
-            int slot = fb->stack_frames[order].slots[R]; \
+            int slot = fb->stack_frames[order].slots[( R )]; \
             if( slot != -1 ) \
                 if( lval ) \
                     printf( "%s", fb->local_list.value[slot].name.value ); \
                 else { \
-                    if( order > 0 && fb->stack_frames[order-1].slots[R] == slot ) \
-                        printf( "%s", fb->local_list.value[slot].name.value ); \
+                    if( order > 0 ) \
+                        if( fb->stack_frames[order-1].slots[( R )] == slot ) \
+                            printf( "%s", fb->local_list.value[slot].name.value ); \
+                        else \
+                            printf( "r(%d)", ( R ) ); \
                     else \
-                        printf( "r(%d)", R ); \
+                        printf( "%s", fb->local_list.value[slot].name.value ); \
                 } \
             else { \
-                printf( "r(%d)", R ); \
+                printf( "r(%d)", ( R ) ); \
             } \
         } \
         else \
-            printf( "r(%d)", R ); \
+            printf( "r(%d)", ( R ) ); \
     }
 
 #define FORMAT_RK( RK, lval ) \
@@ -408,6 +411,7 @@ void format_instruction( FunctionBlock* fb, CodeBlock* cb, Instruction* in, int 
             FORMAT_REGISTER( ind.A, 1 );
             printf( " = len(" );
             FORMAT_REGISTER( ind.B, 0 );
+            printf( ")" );
             break;
         case CONCAT:
             {
@@ -645,17 +649,38 @@ void format_instruction( FunctionBlock* fb, CodeBlock* cb, Instruction* in, int 
     }
     else
         printf( "\n" );
+    if( fb->stack_frames ) {
+        StackFrame* pframe = &fb->stack_frames[order];
+        FORMAT_LEVEL( "\t\tstack frame: " );
+        int i = 0;
+        int* reg = &pframe->slots[0];
+        for( ; i < pframe->max_local; i++, reg++ ) {
+            if( i > 0 )
+                printf( ", " );
+            FORMAT_REGISTER( *reg, 1 );
+        }
+        printf( "\n" );
+    }
     if( cb && cb->instruction_context ) {
         InstructionContext* ic = &cb->instruction_context[order-cb->entry];
-        FORMAT_LEVEL( "\t\taffect: %d, %d, %d\n", ic->affect_type, ic->affect_val, ic->affect_val2 );
+        //FORMAT_LEVEL( "\t\taffect: %d, %d, %d\n", ic->affect_type, ic->affect_val, ic->affect_val2 );
         FORMAT_LEVEL( "\t\tdepends:" );
         int i = 0;
         int cnt = 0;
         for( ; i < ic->num_depend; i++ ) {
-            if( ic->depends[i] != -1 ) {
+            if( i > 0 )
+                printf( "," );
+            printf( " %d", ic->depends[i] );
+        }
+        printf( "\n" );
+        FORMAT_LEVEL( "\t\tdependents:" );
+        i = 0;
+        cnt = 0;
+        for( ; i < ic->num_dependent; i++ ) {
+            if( ic->dependents[i] != -1 ) {
                 if( cnt > 0 )
                     printf( "," );
-                printf( " %d", ic->depends[i] );
+                printf( " %d", ic->dependents[i] );
                 cnt++;
             }
         }
@@ -707,40 +732,48 @@ void format_function( FunctionBlock* fb, OptArg* oa, int recursive, int verbose 
     }
 
     FORMAT_LEVEL( "instruction list:\n" );
-    for( i = 0; i < fb->num_code_block; i++ ) {
-        CodeBlock* cb = fb->code_block[i];
-        if( cb ) {
-            FORMAT_LEVEL( "\tblock. %d\n", cb->id );
+    if( fb->num_code_block ) {
+        for( i = 0; i < fb->num_code_block; i++ ) {
+            CodeBlock* cb = fb->code_block[i];
+            if( cb ) {
+                FORMAT_LEVEL( "\tblock. %d\n", cb->id );
 
-            CodeBlock** ppcb;
-            int j;
-            if( cb->num_pred > 0 ) {
-                FORMAT_LEVEL( "\tpredecessors: " );
-                ppcb = ( CodeBlock** )cb->predecessors;
-                for( j = 0; j < cb->num_pred; j++ ) {
-                    printf( "%d, ", ( *ppcb )->id );
-                    ppcb++;
+                CodeBlock** ppcb;
+                int j;
+                if( cb->num_pred > 0 ) {
+                    FORMAT_LEVEL( "\tpredecessors: " );
+                    ppcb = ( CodeBlock** )cb->predecessors;
+                    for( j = 0; j < cb->num_pred; j++ ) {
+                        printf( "%d, ", ( *ppcb )->id );
+                        ppcb++;
+                    }
+                    printf( "\n" );
                 }
-                printf( "\n" );
-            }
-            if( cb->num_succ > 0 ) {
-                FORMAT_LEVEL( "\tsuccessors: " );
-                CodeBlock** ppcb = ( CodeBlock** )cb->successors;
-                for( j = 0; j < cb->num_succ; j++ ) {
-                    printf( "%d, ", ( *ppcb )->id );
-                    ppcb++;
+                if( cb->num_succ > 0 ) {
+                    FORMAT_LEVEL( "\tsuccessors: " );
+                    CodeBlock** ppcb = ( CodeBlock** )cb->successors;
+                    for( j = 0; j < cb->num_succ; j++ ) {
+                        printf( "%d, ", ( *ppcb )->id );
+                        ppcb++;
+                    }
+                    printf( "\n" );
                 }
-                printf( "\n" );
-            }
 
-            if( oa->optimize && !cb->reachable ) {
-                FORMAT_LEVEL( "\t! unreachable, dead code\n" );
-            }
+                if( oa->optimize && !cb->reachable ) {
+                    FORMAT_LEVEL( "\t! unreachable, dead code\n" );
+                }
 
-            Instruction* in = &fb->instruction_list.value[cb->entry];
-            for( j = cb->entry; j <= cb->exit; j++, in++ ) {
-                format_instruction( fb, cb, in, j, oa );
+                Instruction* in = &fb->instruction_list.value[cb->entry];
+                for( j = cb->entry; j <= cb->exit; j++, in++ ) {
+                    format_instruction( fb, cb, in, j, oa );
+                }
             }
+        }
+    }
+    else {
+        Instruction* in = fb->instruction_list.value;
+        for( i = 0; i < fb->instruction_list.size; i++, in++ ) {
+            format_instruction( fb, 0, in, i, oa );
         }
     }
     

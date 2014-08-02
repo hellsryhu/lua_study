@@ -39,8 +39,10 @@ void reset_stack_frames( FunctionBlock* fb )
         int j;
         int start = l->start-1;
         start = start < 0 ? 0 : start;
-        for( j = l->start, pframe = &fb->stack_frames[start]; j <= l->end; j++, pframe++ )
+        for( j = start, pframe = &fb->stack_frames[start]; j < l->end; j++, pframe++ ) {
             pframe->slots[pframe->max_local++] = i;
+            //printf( "opcode: %d, local: %d\n", j, i );
+        }
     }
 }
 

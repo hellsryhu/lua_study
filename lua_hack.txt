@@ -192,18 +192,36 @@ fixed format problem of lvalue/rvalue
         instruction_context
             affect
             depend
+                依赖关系表示一定要依照依赖的顺序执行
+                    右值寄存器依赖同一寄存器作为左值的字节码
+                    左值寄存器依赖同一寄存器作为左值或右值的字节码
+                    字节码访问到的所有寄存器都要获得依赖关系
+                    ? PC寄存器
+                        如果前后两条字节码都访问了PC，则后者依赖前者
+                    ? 表的键值对
+                    
                 依赖table的特殊处理，如GETTABLE
-                常量key
-                    如果是常量key则可以依据key不同判定非依赖
-                    如果是变量key，因为暂时不能判定依赖，可以可以通过迭代propagation消除
-                栈上table来源是否可确定？
-                    如果是参数或者从其它表里查出来(包括GETGLOBAL)不能确定来源
-                    local new table则可以确定
-                    但是如果new table被其他引用会发生什么情况？
-                    所以为了简化处理，只保留key的规则，而不保留local table的规则
-                    有条件可以处理得更加细致
-                GETGLOBAL也有同样的问题，因为某个局部的表可能被赋值为_G
-TODO:
+                    常量key
+                        如果是常量key则可以依据key不同判定非依赖
+                        如果是变量key，因为暂时不能判定依赖，可以可以通过迭代propagation消除
+                    栈上table来源是否可确定？
+                        如果是参数或者从其它表里查出来(包括GETGLOBAL)不能确定来源
+                        local new table则可以确定
+                        但是如果new table被其他引用会发生什么情况？
+                        所以为了简化处理，只保留key的规则，而不保留local table的规则
+                        有条件可以处理得更加细致
+                    GETGLOBAL也有同样的问题，因为某个局部的表可能被赋值为_G
+                RETURN和TAILCALL的特殊处理
+                    依赖上一条对环境改变的字节码，如果只是修改栈上的元素，那么其实是无用的代码
+                    改变环境的字节码
+                        SETGLOBAL
+                        SETTABLE
+                        SETUPVAL
+                        CALL
+                        SETLIST
+                        * 注意：这里没有考虑重定义元方法的情况，比如ADD
+
+                把计算affect和depend整合到一个循环里
             dependant
         CLOSURE后的伪MOVE指令需要特殊处理下
     redundancy elimination

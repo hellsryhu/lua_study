@@ -60,15 +60,17 @@ enum CONSTANT_TYPE
 
 #define CONST_BASE 0x100
 
-enum AFFECT_TYPE
+enum VALUE_TYPE
 {
-    AT_REGISTER = 1,
-    AT_GLOBAL = 2,
-    AT_UPVALUE = 3,
-    AT_TABLE = 4,
-    AT_RANGE_REGISTER = 5,
-    AT_2_REGISTER = 6,
-    AT_TABLE_RANGE = 7,
+    VT_NONE = 0,
+    VT_REGISTER = 1,
+    VT_2_REGISTER = 2,
+    VT_RANGE_REGISTER = 3,
+    VT_GLOBAL = 4,
+    VT_UPVALUE = 5,
+    VT_TABLE = 6,
+    VT_TABLE_RANGE = 7,
+    VT_VARARG = 8,
 };
 
 #define FPF 20

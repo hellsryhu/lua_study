@@ -55,13 +55,17 @@ typedef struct
 #define IS_CONST( RK ) ( RK >= CONST_BASE )
 
 typedef struct {
+    int type;
+    int val[2];
+} ValueInfo;
+
+typedef struct {
     int num_depend;
     int num_dependent;
     int* depends;
     int* dependents;
-    int affect_type;
-    int affect_val;
-    int affect_val2;
+    ValueInfo lval;
+    ValueInfo rval;
 } InstructionContext;
 
 typedef struct
