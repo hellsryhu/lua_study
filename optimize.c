@@ -887,14 +887,23 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
     i = cb->entry;
     in = &fb->instruction_list.value[i];
     ic = &cb->instruction_context[0];
+    int closure_idx = 0;
+    int closure_cnt = 0;
     for( ; i <= cb->exit; i++, in++, ic++ ) {
         InstructionDetail ind;
         get_instruction_detail( in, &ind );
         switch( ind.op ) {
             case MOVE:
-                ALLOC_DEPENDS( 2 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
-                ic->depends[1] = get_register_depend( cb, ind.B, i, 0 );
+                if( closure_cnt > 0 ) {
+                    ALLOC_DEPENDS( 1 );
+                    closure_cnt--;
+                    ic->depends[0] = closure_idx;
+                }
+                else {
+                    ALLOC_DEPENDS( 2 );
+                    ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
+                    ic->depends[1] = get_register_depend( cb, ind.B, i, 0 );
+                }
                 break;
             case LOADK:
             case LOADBOOL:
@@ -911,9 +920,16 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                 }
                 break;
             case GETUPVAL:
-                ALLOC_DEPENDS( 2 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
-                ic->depends[1] = get_upvalue_depend( cb, ind.B, i, 0 );
+                if( closure_cnt > 0 ) {
+                    ALLOC_DEPENDS( 1 );
+                    closure_cnt--;
+                    ic->depends[0] = closure_idx;
+                }
+                else {
+                    ALLOC_DEPENDS( 2 );
+                    ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
+                    ic->depends[1] = get_upvalue_depend( cb, ind.B, i, 0 );
+                }
                 break;
             case GETGLOBAL:
                 ALLOC_DEPENDS( 2 );
@@ -1068,6 +1084,11 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
             case CLOSURE:
                 ALLOC_DEPENDS( 1 );
                 ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
+                closure_idx = i;
+                {
+                    FunctionBlock* sub_fb = &( ( FunctionBlock* )( fb->funcs ) )[ind.Bx];
+                    closure_cnt = sub_fb->upvalue_list.size;
+                }
                 break;
             case VARARG:
                 ALLOC_DEPENDS( ind.B );

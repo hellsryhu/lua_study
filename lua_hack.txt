@@ -221,7 +221,6 @@ fixed format problem of lvalue/rvalue
                         SETLIST
                         * 注意：这里没有考虑重定义元方法的情况，比如ADD
 
-                把计算affect和depend整合到一个循环里
             dependant
         CLOSURE后的伪MOVE指令需要特殊处理下
     redundancy elimination
