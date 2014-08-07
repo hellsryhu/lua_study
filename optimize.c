@@ -755,13 +755,22 @@ int get_return_depend( FunctionBlock* fb, CodeBlock* cb, int order )
         ic->num_depend = ( size ); \
         ic->depends = ( size ) > 0 ? malloc( sizeof( int )*( size ) ) : 0; \
     }
-#define RK_DEPEND( RK, idx, lval ) \
+
+#define DEPEND( idx, line ) \
     { \
-        if( IS_CONST( RK ) ) \
-            ic->depends[idx] = -1; \
-        else \
-            ic->depends[idx] = get_register_depend( cb, ( RK ), i, lval ); \
+        int nline = line; \
+        ic->depends[idx] = nline; \
+        if( nline >= 0 ) { \
+            InstructionContext* dic = &cb->instruction_context[nline-cb->entry]; \
+            dic->num_dependent++; \
+        } \
     }
+
+#define RK_DEPEND( RK, idx, lval ) \
+    if( IS_CONST( RK ) ) \
+        DEPEND( idx, -1 ) \
+    else \
+        DEPEND( idx, get_register_depend( cb, ( RK ), i, lval ) )
         
 
 void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
@@ -897,18 +906,19 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                 if( closure_cnt > 0 ) {
                     ALLOC_DEPENDS( 1 );
                     closure_cnt--;
-                    ic->depends[0] = closure_idx;
+                    DEPEND( 0, closure_idx );
                 }
                 else {
                     ALLOC_DEPENDS( 2 );
-                    ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
-                    ic->depends[1] = get_register_depend( cb, ind.B, i, 0 );
+                    DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
+                    DEPEND( 1, get_register_depend( cb, ind.B, i, 0 ) );
                 }
                 break;
             case LOADK:
             case LOADBOOL:
+            case NEWTABLE:
                 ALLOC_DEPENDS( 1 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
                 break;
             case LOADNIL:
                 ALLOC_DEPENDS( ind.B-ind.A+1 );
@@ -916,57 +926,53 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                     int r = ind.A;
                     int j = 0;
                     for( ; r <= ind.B; r++, j++ )
-                        ic->depends[j] = get_register_depend( cb, r, i, 1 );
+                        DEPEND( j, get_register_depend( cb, r, i, 1 ) )
                 }
                 break;
             case GETUPVAL:
                 if( closure_cnt > 0 ) {
                     ALLOC_DEPENDS( 1 );
                     closure_cnt--;
-                    ic->depends[0] = closure_idx;
+                    DEPEND( 0, closure_idx );
                 }
                 else {
                     ALLOC_DEPENDS( 2 );
-                    ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
-                    ic->depends[1] = get_upvalue_depend( cb, ind.B, i, 0 );
+                    DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
+                    DEPEND( 1, get_upvalue_depend( cb, ind.B, i, 0 ) );
                 }
                 break;
             case GETGLOBAL:
                 ALLOC_DEPENDS( 2 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
-                ic->depends[1] = get_table_depend( fb, cb, -1, ind.Bx+CONST_BASE, i, 0 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
+                DEPEND( 1, get_table_depend( fb, cb, -1, ind.Bx+CONST_BASE, i, 0 ) );
                 break;
             case GETTABLE:
                 ALLOC_DEPENDS( 3 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
-                ic->depends[1] = get_table_depend( fb, cb, ind.B, ind.C, i, 0 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
+                DEPEND( 1, get_table_depend( fb, cb, ind.B, ind.C, i, 0 ) );
                 RK_DEPEND( ind.C, 2, 0 );
                 break;
             case SETGLOBAL:
                 ALLOC_DEPENDS( 2 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 0 );
-                ic->depends[1] = get_table_depend( fb, cb, -1, ind.Bx+CONST_BASE, i, 1 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 0 ) );
+                DEPEND( 1, get_table_depend( fb, cb, -1, ind.Bx+CONST_BASE, i, 1 ) );
                 break;
             case SETUPVAL:
                 ALLOC_DEPENDS( 2 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 0 );
-                ic->depends[1] = get_upvalue_depend( cb, ind.B, i, 1 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 0 ) );
+                DEPEND( 1, get_upvalue_depend( cb, ind.B, i, 1 ) );
                 break;
             case SETTABLE:
                 ALLOC_DEPENDS( 3 );
-                ic->depends[0] = get_table_depend( fb, cb, ind.A, ind.B, i, 1 );
-                ic->depends[1] = get_register_depend( cb, ind.B, i, 0 );
+                DEPEND( 0, get_table_depend( fb, cb, ind.A, ind.B, i, 1 ) );
+                DEPEND( 1, get_register_depend( cb, ind.B, i, 0 ) );
                 RK_DEPEND( ind.C, 2, 0 );
-                break;
-            case NEWTABLE:
-                ALLOC_DEPENDS( 1 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
                 break;
             case SELF:
                 ALLOC_DEPENDS( 4 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
-                ic->depends[1] = get_register_depend( cb, ind.A+1, i, 1 );
-                ic->depends[2] = get_table_depend( fb, cb, ind.B, ind.C, i, 0 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
+                DEPEND( 1, get_register_depend( cb, ind.A+1, i, 1 ) );
+                DEPEND( 2, get_table_depend( fb, cb, ind.B, ind.C, i, 0 ) );
                 RK_DEPEND( ind.C, 3, 0 );
                 break;
             case ADD:
@@ -976,7 +982,7 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
             case MOD:
             case POW:
                 ALLOC_DEPENDS( 3 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
                 RK_DEPEND( ind.B, 1, 0 );
                 RK_DEPEND( ind.C, 2, 0 );
                 break;
@@ -984,17 +990,17 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
             case NOT:
             case LEN:
                 ALLOC_DEPENDS( 2 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
                 RK_DEPEND( ind.B, 1, 0 );
                 break;
             case CONCAT:
                 ALLOC_DEPENDS( ind.C-ind.B+2 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
                 {
                     int j = 1;
                     int r = ind.B;
                     for( ; r <= ind.C; r++, j++ )
-                        ic->depends[j] = get_register_depend( cb, r, i, 0 );
+                        DEPEND( j, get_register_depend( cb, r, i, 0 ) )
                 }
                 break;
             case EQ:
@@ -1006,12 +1012,12 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                 break;
             case TEST:
                 ALLOC_DEPENDS( 1 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 0 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 0 ) );
                 break;
             case TESTSET:
                 ALLOC_DEPENDS( 2 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
-                ic->depends[1] = get_register_depend( cb, ind.B, i, 0 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
+                DEPEND( 1, get_register_depend( cb, ind.B, i, 0 ) );
                 break;
             case CALL:
                 ALLOC_DEPENDS( ind.B+ind.C-1 );
@@ -1019,43 +1025,43 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                     int j = 0;
                     int r = ind.A;
                     for( ; r < ind.C-1; r++, j++ )
-                        ic->depends[j] = get_register_depend( cb, r, i, 1 );
+                        DEPEND( j, get_register_depend( cb, r, i, 1 ) )
                     r = ind.A;
                     for( ; r < ind.B; j++, r++ )
-                        ic->depends[j] = get_register_depend( cb, r, i, 0 );
+                        DEPEND( j, get_register_depend( cb, r, i, 0 ) )
                 }
                 break;
             case TAILCALL:
                 ALLOC_DEPENDS( ind.B+1 );
-                ic->depends[0] = get_return_depend( fb, cb, i );
+                DEPEND( 0, get_return_depend( fb, cb, i ) );
                 {
                     int j = 1;
                     int r = ind.A;
                     for( ; r < ind.A+ind.B; j++, r++ )
-                        ic->depends[j] = get_register_depend( cb, r, i, 0 );
+                        DEPEND( j, get_register_depend( cb, r, i, 0 ) )
                 }
                 break;
             case RETURN:
                 ALLOC_DEPENDS( ind.B );
-                ic->depends[0] = get_return_depend( fb, cb, i );
+                DEPEND( 0, get_return_depend( fb, cb, i ) );
                 {
                     int j = 1;
                     int r = ind.A;
                     for( ; r < ind.A+ind.B-1; j++, r++ )
-                        ic->depends[j] = get_register_depend( cb, r, i, 0 );
+                        DEPEND( j, get_register_depend( cb, r, i, 0 ) )
                 }
                 break;
             case FORLOOP:
                 ALLOC_DEPENDS( 4 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
-                ic->depends[1] = get_register_depend( cb, ind.A+3, i, 1 );
-                ic->depends[2] = get_register_depend( cb, ind.A+1, i, 0 );
-                ic->depends[3] = get_register_depend( cb, ind.A+2, i, 0 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
+                DEPEND( 1, get_register_depend( cb, ind.A+3, i, 1 ) );
+                DEPEND( 2, get_register_depend( cb, ind.A+1, i, 0 ) );
+                DEPEND( 3, get_register_depend( cb, ind.A+2, i, 0 ) );
                 break;
             case FORPREP:
                 ALLOC_DEPENDS( 2 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
-                ic->depends[1] = get_register_depend( cb, ind.A+2, i, 0 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
+                DEPEND( 1, get_register_depend( cb, ind.A+2, i, 0 ) );
                 break;
             case TFORLOOP:
                 ALLOC_DEPENDS( ind.C+4 );
@@ -1063,10 +1069,10 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                     int j = 0;
                     int r = ind.A+2;
                     for( ; r <= ind.C+2; r++, j++ )
-                        ic->depends[j] = get_register_depend( cb, r, i, 1 );
+                        DEPEND( j, get_register_depend( cb, r, i, 1 ) )
                     r = ind.A;
                     for( ; r <= ind.A+3; r++, j++ )
-                        ic->depends[j] = get_register_depend( cb, r, i, 0 );
+                        DEPEND( j, get_register_depend( cb, r, i, 0 ) )
                 }
                 break;
             case SETLIST:
@@ -1075,15 +1081,15 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                     int j = 0;
                     int r = 1;
                     for( ; r <= ind.B; j++, r++ )
-                        ic->depends[j] = get_table_depend( fb, cb, ind.A, -( ( ind.C-1 )*FPF+r ), i, 1 );
+                        DEPEND( j, get_table_depend( fb, cb, ind.A, -( ( ind.C-1 )*FPF+r ), i, 1 ) );
                     r = ind.A;
                     for( ; r <= ind.A+ind.B; j++, r++ )
-                        ic->depends[j] = get_register_depend( cb, r, i, 0 );
+                        DEPEND( j, get_register_depend( cb, r, i, 0 ) );
                 }
                 break;
             case CLOSURE:
                 ALLOC_DEPENDS( 1 );
-                ic->depends[0] = get_register_depend( cb, ind.A, i, 1 );
+                DEPEND( 0, get_register_depend( cb, ind.A, i, 1 ) );
                 closure_idx = i;
                 {
                     FunctionBlock* sub_fb = &( ( FunctionBlock* )( fb->funcs ) )[ind.Bx];
@@ -1096,7 +1102,7 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                     int j = 0;
                     int r = ind.A;
                     for( ; r < ind.B; r++, j++ )
-                        ic->depends[j] = get_register_depend( cb, r, i, 1 );
+                        DEPEND( j, get_register_depend( cb, r, i, 1 ) );
                 }
                 break;
             default:
@@ -1105,15 +1111,28 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
     }
 
     // get dependents
+    int** cursors = malloc( sizeof( int* )*( cb->exit-cb->entry+1 ) );
     i = cb->entry;
-    in = &fb->instruction_list.value[i];
     ic = &cb->instruction_context[0];
-    for( ; i <= cb->exit; i++, in++, ic++ ) {
-        InstructionDetail ind;
-        get_instruction_detail( in, &ind );
-        switch( ind.op ) {
+    for( ; i < cb->exit; i++, ic++ ) {
+        ic->dependents = ( ic->num_dependent ) > 0 ? malloc( sizeof( int )*( ic->num_dependent ) ) : 0;
+        cursors[i-cb->entry] = ic->dependents;
+    }
+    i = cb->entry;
+    ic = &cb->instruction_context[0];
+    for( ; i <= cb->exit; i++, ic++ ) {
+        int j = 0;
+        int* pdp = ic->depends;
+        for( ; j < ic->num_depend; j++, pdp++ ) {
+            int dp = *pdp;
+            if( dp != -1 ) {
+                dp -= cb->entry;
+                *( cursors[dp] ) = i;
+                cursors[dp]++;
+            }
         }
     }
+    free( cursors );
 }
 
 #define IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )

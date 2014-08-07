@@ -663,7 +663,6 @@ void format_instruction( FunctionBlock* fb, CodeBlock* cb, Instruction* in, int 
             //FORMAT_LEVEL( "\t\taffect: %d, %d, %d\n", ic->affect_type, ic->affect_val, ic->affect_val2 );
             FORMAT_LEVEL( "\t\tdepends:" );
             int i = 0;
-            int cnt = 0;
             for( ; i < ic->num_depend; i++ ) {
                 if( i > 0 )
                     printf( "," );
@@ -672,14 +671,10 @@ void format_instruction( FunctionBlock* fb, CodeBlock* cb, Instruction* in, int 
             printf( "\n" );
             FORMAT_LEVEL( "\t\tdependents:" );
             i = 0;
-            cnt = 0;
             for( ; i < ic->num_dependent; i++ ) {
-                if( ic->dependents[i] != -1 ) {
-                    if( cnt > 0 )
-                        printf( "," );
-                    printf( " %d", ic->dependents[i] );
-                    cnt++;
-                }
+                if( i > 0 )
+                    printf( "," );
+                printf( " %d", ic->dependents[i] );
             }
             printf( "\n" );
         }
