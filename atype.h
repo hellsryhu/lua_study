@@ -82,6 +82,8 @@ typedef struct
     char pred_sequential;
     char succ_sequential;
     InstructionContext* instruction_context;
+    int* exe_levels;
+    int* exe_order;
 } CodeBlock;
 
 #define CODE_BLOCK_LEN( cb ) ( cb->exit-cb->entry+1 )

@@ -639,7 +639,7 @@ int is_same_reg( ValueInfo* vi, int reg )
 int get_register_depend( CodeBlock* cb, int reg, int order, int lval )
 {
     int i = order-1;
-    InstructionContext* ic = &cb->instruction_context[i];
+    InstructionContext* ic = &cb->instruction_context[i-cb->entry];
     for( ; i >= cb->entry; i--, ic-- ) {
         if( is_same_reg( &ic->lval, reg ) )
             return i;
@@ -736,7 +736,7 @@ int get_return_depend( FunctionBlock* fb, CodeBlock* cb, int order )
 {
     int i = order-1;
     Instruction* in = &fb->instruction_list.value[i];
-    for( ; i >= 0; i--, in-- ) {
+    for( ; i >= cb->entry; i--, in-- ) {
         InstructionDetail ind;
         get_instruction_detail( in, &ind );
         if( ind.op == SETGLOBAL || ind.op == SETTABLE || ind.op == SETUPVAL || ind.op == CALL || ind.op == SETLIST )
@@ -771,12 +771,39 @@ int get_return_depend( FunctionBlock* fb, CodeBlock* cb, int order )
         DEPEND( idx, -1 ) \
     else \
         DEPEND( idx, get_register_depend( cb, ( RK ), i, lval ) )
-        
+     
+void mark_level( CodeBlock* cb, int order, int lv, int* levels )
+{
+    int cur_lv = levels[order-cb->entry];
+    if( cur_lv < lv )
+        levels[order-cb->entry] = lv;
+
+    int k = 0;
+    InstructionContext* ic = &cb->instruction_context[order-cb->entry];
+    int* pdp = ic->dependents;
+    for( ; k < ic->num_dependent; k++, pdp++ ) {
+        int dp = *pdp;
+        mark_level( cb, dp, lv+1, levels );
+    }
+}
+
+int is_greater_order( void** varray, int index_a, int index_b )
+{
+    int a = ( int )varray[index_a];
+    int b = ( int )varray[index_b];
+    if( a > b )
+        return 1;
+    else if( a < b )
+        return 0;
+    else
+        return index_a > index_b;
+}
+   
 
 void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
 {
-    cb->instruction_context = malloc( sizeof( InstructionContext )*( cb->exit-cb->entry+1 ) );
-    memset( cb->instruction_context, 0, sizeof( InstructionContext )*( cb->exit-cb->entry+1 ) );
+    cb->instruction_context = malloc( sizeof( InstructionContext )*CODE_BLOCK_LEN( cb ) );
+    memset( cb->instruction_context, 0, sizeof( InstructionContext )*CODE_BLOCK_LEN( cb ) );
     
     // get affects
     int i = cb->entry;
@@ -1003,6 +1030,10 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                         DEPEND( j, get_register_depend( cb, r, i, 0 ) )
                 }
                 break;
+            case JMP:
+                ALLOC_DEPENDS( 1 );
+                DEPEND( 0, i-1 < cb->entry ? -1 : i-1 );
+                break;
             case EQ:
             case LT:
             case LE:
@@ -1024,10 +1055,10 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                 {
                     int j = 0;
                     int r = ind.A;
-                    for( ; r < ind.C-1; r++, j++ )
+                    for( ; r < ind.A+ind.C-1; r++, j++ )
                         DEPEND( j, get_register_depend( cb, r, i, 1 ) )
                     r = ind.A;
-                    for( ; r < ind.B; j++, r++ )
+                    for( ; r < ind.A+ind.B; j++, r++ )
                         DEPEND( j, get_register_depend( cb, r, i, 0 ) )
                 }
                 break;
@@ -1111,10 +1142,10 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
     }
 
     // get dependents
-    int** cursors = malloc( sizeof( int* )*( cb->exit-cb->entry+1 ) );
+    int** cursors = malloc( sizeof( int* )*CODE_BLOCK_LEN( cb ) );
     i = cb->entry;
     ic = &cb->instruction_context[0];
-    for( ; i < cb->exit; i++, ic++ ) {
+    for( ; i <= cb->exit; i++, ic++ ) {
         ic->dependents = ( ic->num_dependent ) > 0 ? malloc( sizeof( int )*( ic->num_dependent ) ) : 0;
         cursors[i-cb->entry] = ic->dependents;
     }
@@ -1133,6 +1164,19 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
         }
     }
     free( cursors );
+
+    // get execute levels
+    cb->exe_levels = malloc( sizeof( int )*CODE_BLOCK_LEN( cb ) );
+    memset( cb->exe_levels, 0, sizeof( int )*CODE_BLOCK_LEN( cb ) );
+
+    for( i = cb->entry; i <= cb->exit; i++, ic++ )
+        mark_level( cb, i, 1, cb->exe_levels );
+
+    cb->exe_order = malloc( sizeof( int )*CODE_BLOCK_LEN( cb ) );
+    int* po = cb->exe_order;
+    for( i = cb->entry; i <= cb->exit; i++, po++ )
+        *po = i;
+    quick_sort2( cb->exe_order, cb->entry, ( void** )cb->exe_levels, 0, cb->exit-cb->entry, is_greater_order );
 }
 
 #define IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )
@@ -1516,7 +1560,7 @@ void optimize( FunctionBlock* fb, OptArg* oa )
     int opt = dead_code_elimination( fb, oa );
 
     // local optimization
-    opt += constant_propagation( fb, oa );
+    //opt += constant_propagation( fb, oa );
 
     int ret = 0;
     while( ( ret = constant_folding( fb, oa ) ) != 0 )

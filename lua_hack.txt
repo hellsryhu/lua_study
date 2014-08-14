@@ -220,9 +220,11 @@ fixed format problem of lvalue/rvalue
                         CALL
                         SETLIST
                         * 注意：这里没有考虑重定义元方法的情况，比如ADD
-
             dependant
         CLOSURE后的伪MOVE指令需要特殊处理下
+TODO:
+    找到代码执行顺序
+
     redundancy elimination
         重复赋值
     constant propagation

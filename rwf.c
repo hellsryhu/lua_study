@@ -733,29 +733,48 @@ void format_function( FunctionBlock* fb, OptArg* oa, int recursive, int verbose 
             if( cb ) {
                 FORMAT_LEVEL( "\tblock. %d\n", cb->id );
 
-                CodeBlock** ppcb;
-                int j;
-                if( cb->num_pred > 0 ) {
-                    FORMAT_LEVEL( "\tpredecessors: " );
-                    ppcb = ( CodeBlock** )cb->predecessors;
-                    for( j = 0; j < cb->num_pred; j++ ) {
-                        printf( "%d, ", ( *ppcb )->id );
-                        ppcb++;
-                    }
-                    printf( "\n" );
-                }
-                if( cb->num_succ > 0 ) {
-                    FORMAT_LEVEL( "\tsuccessors: " );
-                    CodeBlock** ppcb = ( CodeBlock** )cb->successors;
-                    for( j = 0; j < cb->num_succ; j++ ) {
-                        printf( "%d, ", ( *ppcb )->id );
-                        ppcb++;
-                    }
-                    printf( "\n" );
-                }
-
                 if( oa->optimize && !cb->reachable ) {
                     FORMAT_LEVEL( "\t! unreachable, dead code\n" );
+                }
+
+                CodeBlock** ppcb;
+                int j;
+                if( oa->verbose ) {
+                    if( cb->num_pred > 0 ) {
+                        FORMAT_LEVEL( "\tpredecessors: " );
+                        ppcb = ( CodeBlock** )cb->predecessors;
+                        for( j = 0; j < cb->num_pred; j++ ) {
+                            printf( "%d, ", ( *ppcb )->id );
+                            ppcb++;
+                        }
+                        printf( "\n" );
+                    }
+                    if( cb->num_succ > 0 ) {
+                        FORMAT_LEVEL( "\tsuccessors: " );
+                        CodeBlock** ppcb = ( CodeBlock** )cb->successors;
+                        for( j = 0; j < cb->num_succ; j++ ) {
+                            printf( "%d, ", ( *ppcb )->id );
+                            ppcb++;
+                        }
+                        printf( "\n" );
+                    }
+
+                    if( cb->instruction_context ) {
+                        FORMAT_LEVEL( "\texe order:" );
+                        int cur_lv = 0;
+                        for( j = 0; j < CODE_BLOCK_LEN( cb ); j++ ) {
+                            int order = cb->exe_order[j];
+                            int lv = cb->exe_levels[order-cb->entry];
+                            if( lv > cur_lv ) {
+                                cur_lv = lv;
+                                printf( "\n" );
+                                FORMAT_LEVEL( "\t\tlevel %d: %d", cur_lv, order );
+                            }
+                            else
+                                printf( ", %d", order );
+                        }
+                        printf( "\n" );
+                    }
                 }
 
                 Instruction* in = &fb->instruction_list.value[cb->entry];
