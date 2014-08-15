@@ -1051,8 +1051,13 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                 DEPEND( 1, get_register_depend( cb, ind.B, i, 0 ) );
                 break;
             case CALL:
-                ALLOC_DEPENDS( ind.B+ind.C-1 );
                 {
+                    int size = 0;
+                    if( ind.C > 1 )
+                        size += ind.C-1;
+                    if( ind.B > 1 )
+                        size += ind.B;
+                    ALLOC_DEPENDS( size );
                     int j = 0;
                     int r = ind.A;
                     for( ; r < ind.A+ind.C-1; r++, j++ )
@@ -1063,19 +1068,26 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                 }
                 break;
             case TAILCALL:
-                ALLOC_DEPENDS( ind.B+1 );
-                DEPEND( 0, get_return_depend( fb, cb, i ) );
                 {
-                    int j = 1;
-                    int r = ind.A;
+                    int size = 2;
+                    if( ind.B > 1 )
+                        size += ind.B;
+                    ALLOC_DEPENDS( size );
+                    DEPEND( 0, get_return_depend( fb, cb, i ) );
+                    DEPEND( 1, get_register_depend( cb, ind.A, i, 0 ) );
+                    int j = 2;
+                    int r = ind.A+1;
                     for( ; r < ind.A+ind.B; j++, r++ )
                         DEPEND( j, get_register_depend( cb, r, i, 0 ) )
                 }
                 break;
             case RETURN:
-                ALLOC_DEPENDS( ind.B );
-                DEPEND( 0, get_return_depend( fb, cb, i ) );
                 {
+                    int size = 1;
+                    if( ind.B > 1 )
+                        size += ind.B-1;
+                    ALLOC_DEPENDS( size );
+                    DEPEND( 0, get_return_depend( fb, cb, i ) );
                     int j = 1;
                     int r = ind.A;
                     for( ; r < ind.A+ind.B-1; j++, r++ )
@@ -1099,7 +1111,7 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
                 {
                     int j = 0;
                     int r = ind.A+2;
-                    for( ; r <= ind.C+2; r++, j++ )
+                    for( ; r <= ind.A+ind.C+2; r++, j++ )
                         DEPEND( j, get_register_depend( cb, r, i, 1 ) )
                     r = ind.A;
                     for( ; r <= ind.A+3; r++, j++ )
@@ -1146,7 +1158,12 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
     i = cb->entry;
     ic = &cb->instruction_context[0];
     for( ; i <= cb->exit; i++, ic++ ) {
-        ic->dependents = ( ic->num_dependent ) > 0 ? malloc( sizeof( int )*( ic->num_dependent ) ) : 0;
+        if( ic->num_dependent > 0 ) {
+            int size = sizeof( int )*( ic->num_dependent );
+            ic->dependents = malloc( sizeof( int )*size );
+        }
+        else
+            ic->dependents = 0;
         cursors[i-cb->entry] = ic->dependents;
     }
     i = cb->entry;

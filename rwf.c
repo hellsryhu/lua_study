@@ -654,7 +654,7 @@ void format_instruction( FunctionBlock* fb, CodeBlock* cb, Instruction* in, int 
             for( ; i < pframe->max_local; i++, reg++ ) {
                 if( i > 0 )
                     printf( ", " );
-                FORMAT_REGISTER( *reg, 1 );
+                printf( "%s", fb->local_list.value[*reg].name.value ); \
             }
             printf( "\n" );
         }
