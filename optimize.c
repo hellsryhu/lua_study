@@ -1196,6 +1196,11 @@ void create_instruction_context( FunctionBlock* fb, CodeBlock* cb )
     quick_sort2( cb->exe_order, cb->entry, ( void** )cb->exe_levels, 0, cb->exit-cb->entry, is_greater_order );
 }
 
+int directed_acyclic_graph( FunctionBlock* fb, CodeBlock* cb )
+{
+    return 0;
+}
+
 #define IS_LOCAL( R, iid ) ( fb->stack_frames ? fb->stack_frames[iid].slots[R] != -1 : 0 )
 
 #define OPT_CF_ARITH            0x01
@@ -1561,8 +1566,10 @@ void optimize( FunctionBlock* fb, OptArg* oa )
 {
     int verbose = 1;
     if( !oa->hint && !oa->opt_output ) {
-        format_function( fb, oa, 0, verbose );
         verbose = 0;
+        oa->optimize = 0;
+        format_function( fb, oa, 0, verbose );
+        oa->optimize = 1;
     }
 
     // create instruction flow
@@ -1592,9 +1599,14 @@ void optimize( FunctionBlock* fb, OptArg* oa )
     if( oa->hint )
         format_function( fb, oa, 0, verbose );
     else {
-        if( !oa->opt_output && opt ) {
-            FORMAT_LEVEL( "! optimized\n" );
-            format_function( fb, oa, 0, verbose );
+        if( !oa->opt_output ) {
+            if( opt ) {
+                FORMAT_LEVEL( "! optimized\n" );
+                format_function( fb, oa, 0, verbose );
+            }
+            else {
+                FORMAT_LEVEL( "! no optimization\n" );
+            }
         }
     }
 
