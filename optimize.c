@@ -1584,6 +1584,7 @@ void optimize( FunctionBlock* fb, OptArg* oa )
     int opt = dead_code_elimination( fb, oa );
 
     // local optimization
+    // TODO: DAG
     //opt += constant_propagation( fb, oa );
 
     int ret = 0;
